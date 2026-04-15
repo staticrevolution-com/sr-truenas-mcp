@@ -21,16 +21,18 @@ Forked from [spranab/truenas-mcp](https://github.com/spranab/truenas-mcp) with c
 
 ## Installation
 
-### npm (recommended)
+### npm (from GitHub Release)
 
 ```bash
-npx sr-truenas-mcp
+# Install from release tarball
+npm install -g https://github.com/staticrevolution-com/sr-truenas-mcp/releases/download/v1.0.0/sr-truenas-mcp-1.0.0.tgz
+sr-truenas-mcp
 ```
 
-Or install globally:
+Or install directly from the repo:
 
 ```bash
-npm install -g sr-truenas-mcp
+npm install -g github:staticrevolution-com/sr-truenas-mcp
 sr-truenas-mcp
 ```
 
@@ -73,8 +75,7 @@ Requires Node.js 18+.
 {
   "mcpServers": {
     "truenas": {
-      "command": "npx",
-      "args": ["-y", "sr-truenas-mcp"],
+      "command": "sr-truenas-mcp",
       "env": {
         "TRUENAS_URL": "wss://truenas.local:444",
         "TRUENAS_API_KEY": "your-key",
@@ -111,8 +112,7 @@ Add to `claude_desktop_config.json`:
 {
   "mcpServers": {
     "truenas": {
-      "command": "npx",
-      "args": ["-y", "sr-truenas-mcp"],
+      "command": "sr-truenas-mcp",
       "env": {
         "TRUENAS_URL": "wss://truenas.local:444",
         "TRUENAS_API_KEY": "your-key",
@@ -131,8 +131,7 @@ Add to `.vscode/mcp.json`:
 {
   "servers": {
     "truenas": {
-      "command": "npx",
-      "args": ["-y", "sr-truenas-mcp"],
+      "command": "sr-truenas-mcp",
       "env": {
         "TRUENAS_URL": "wss://truenas.local:444",
         "TRUENAS_API_KEY": "your-key",
