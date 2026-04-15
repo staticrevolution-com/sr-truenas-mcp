@@ -34,7 +34,10 @@
     "websocket",
     "json-rpc"
   ],
-  "author": "staticrevolution-com",
+  "author": "Static Revolution <warren.kelly@staticrevolution.com>",
+  "contributors": [
+    "spranab <developer@pranab.co.in> (original truenas-mcp)"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/staticrevolution-com/sr-truenas-mcp.git"
