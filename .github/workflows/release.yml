@@ -6,9 +6,14 @@ on:
 
 permissions:
   contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-binary:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -19,8 +24,18 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
-      - run: npm run bundle
-      - run: npx pkg dist/bundle.cjs --target node20-linux-x64 --output dist/sr-truenas-mcp --compress GZip
+
+  binary:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build:binary
       - run: |
           cd dist
           tar czf sr-truenas-mcp-linux-x64.tar.gz sr-truenas-mcp
@@ -32,3 +47,35 @@ jobs:
           gh release upload "${{ github.event.release.tag_name }}" \
             dist/sr-truenas-mcp-linux-x64.tar.gz \
             dist/sr-truenas-mcp-linux-x64.tar.gz.sha256
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+      - name: Build and push Docker image
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          IMAGE_LOWER=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+          TAG="${{ github.event.release.tag_name }}"
+          docker build -t "${IMAGE_LOWER}:${TAG}" -t "${IMAGE_LOWER}:latest" .
+          docker push "${IMAGE_LOWER}:${TAG}"
+          docker push "${IMAGE_LOWER}:latest"
+
+  npm:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run build
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

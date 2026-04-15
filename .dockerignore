@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+.git/
+.github/
+docs/
+PLAN.md
+*.tsbuildinfo
+.env
+.env.local
+src/__tests__/
+vitest.config.ts

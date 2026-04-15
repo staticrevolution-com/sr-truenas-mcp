@@ -21,48 +21,131 @@ Forked from [spranab/truenas-mcp](https://github.com/spranab/truenas-mcp) with c
 
 ## Installation
 
+### npm (recommended)
+
+```bash
+npx sr-truenas-mcp
+```
+
+Or install globally:
+
+```bash
+npm install -g sr-truenas-mcp
+sr-truenas-mcp
+```
+
+### Docker
+
+```bash
+docker run -i --rm \
+  -e TRUENAS_URL=wss://truenas.local:444 \
+  -e TRUENAS_API_KEY=your-key \
+  -e TRUENAS_VERIFY_SSL=false \
+  ghcr.io/staticrevolution-com/sr-truenas-mcp:latest
+```
+
+### Standalone Binary
+
+Download from [GitHub Releases](https://github.com/staticrevolution-com/sr-truenas-mcp/releases):
+
+```bash
+wget -qO- https://github.com/staticrevolution-com/sr-truenas-mcp/releases/download/v1.0.0/sr-truenas-mcp-linux-x64.tar.gz | tar xzf -
+chmod +x sr-truenas-mcp
+TRUENAS_URL=wss://truenas.local:444 TRUENAS_API_KEY=... ./sr-truenas-mcp
+```
+
+### From Source
+
 ```bash
 git clone https://github.com/staticrevolution-com/sr-truenas-mcp.git
 cd sr-truenas-mcp
-npm install
-npm run build
+npm install && npm run build
+node dist/cli.js
 ```
 
 Requires Node.js 18+.
 
 ## Deployment
 
-Three deployment methods are supported:
+### Claude Code
 
-### 1. Direct Node.js (development / Claude Code MCP)
-
-Run the built TypeScript directly with Node.js. Best for local development and Claude Code MCP configurations.
-
-```bash
-TRUENAS_URL=wss://truenas.local:444 TRUENAS_API_KEY=... node dist/cli.js
+```json
+{
+  "mcpServers": {
+    "truenas": {
+      "command": "npx",
+      "args": ["-y", "sr-truenas-mcp"],
+      "env": {
+        "TRUENAS_URL": "wss://truenas.local:444",
+        "TRUENAS_API_KEY": "your-key",
+        "TRUENAS_VERIFY_SSL": "false"
+      }
+    }
+  }
+}
 ```
 
-### 2. Standalone Binary (production / AgentGateway)
+Or with Docker:
 
-Compile to a self-contained Linux x64 binary with embedded Node.js runtime. No runtime dependencies — deploy like any other binary.
-
-```bash
-# Build the binary
-npm run build:binary
-
-# Output: dist/sr-truenas-mcp (55MB Linux x64 ELF)
-
-# Run it
-TRUENAS_URL=wss://truenas.local:444 TRUENAS_API_KEY=... ./dist/sr-truenas-mcp
+```json
+{
+  "mcpServers": {
+    "truenas": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm",
+        "-e", "TRUENAS_URL=wss://truenas.local:444",
+        "-e", "TRUENAS_API_KEY=your-key",
+        "-e", "TRUENAS_VERIFY_SSL=false",
+        "ghcr.io/staticrevolution-com/sr-truenas-mcp:latest"
+      ]
+    }
+  }
+}
 ```
 
-The binary is produced by [esbuild](https://esbuild.github.io/) (bundling) + [@yao-pkg/pkg](https://github.com/nicolo-ribaudo/pkg) (Node.js embedding). It targets `node20-linux-x64` with GZip compression.
+### Claude Desktop
 
-GitHub releases include pre-built binaries as `sr-truenas-mcp-linux-x64.tar.gz` with SHA256 checksums.
+Add to `claude_desktop_config.json`:
 
-### 3. AgentGateway stdio Backend
+```json
+{
+  "mcpServers": {
+    "truenas": {
+      "command": "npx",
+      "args": ["-y", "sr-truenas-mcp"],
+      "env": {
+        "TRUENAS_URL": "wss://truenas.local:444",
+        "TRUENAS_API_KEY": "your-key",
+        "TRUENAS_VERIFY_SSL": "false"
+      }
+    }
+  }
+}
+```
 
-Deploy as a stdio backend in [AgentGateway](https://agentgateway.dev/) alongside other MCP servers. Uses the standalone binary from a GitHub release.
+### VS Code
+
+Add to `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "truenas": {
+      "command": "npx",
+      "args": ["-y", "sr-truenas-mcp"],
+      "env": {
+        "TRUENAS_URL": "wss://truenas.local:444",
+        "TRUENAS_API_KEY": "your-key",
+        "TRUENAS_VERIFY_SSL": "false"
+      }
+    }
+  }
+}
+```
+
+### AgentGateway (stdio backend)
+
+Deploy as a stdio backend alongside other MCP servers using the standalone binary.
 
 **Init container** (downloads binary on first start):
 ```yaml
@@ -79,7 +162,7 @@ truenas-mcp-init:
     - /path/to/agentgateway/bin:/bin-vol
 ```
 
-**AgentGateway config.yaml target:**
+**AgentGateway config.yaml:**
 ```yaml
 - name: truenas
   stdio:
@@ -89,8 +172,6 @@ truenas-mcp-init:
       TRUENAS_API_KEY: "${TRUENAS_API_KEY}"
       TRUENAS_VERIFY_SSL: "${TRUENAS_VERIFY_SSL}"
 ```
-
-The API key should be set as a Portainer stack environment variable (secret), not in the `.env` file.
 
 ## Configuration
 
