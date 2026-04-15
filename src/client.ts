@@ -51,7 +51,6 @@ interface PendingRequest {
 
 export class TrueNASClient {
   private wsUrl: string;
-  private httpBaseUrl: string;
   private apiKey: string;
   private verifySsl: boolean;
 
@@ -68,8 +67,6 @@ export class TrueNASClient {
 
     // Build WebSocket URL
     this.wsUrl = toWsUrl(base);
-    // Keep HTTP base for legacy REST methods (removed in Phase 3)
-    this.httpBaseUrl = toHttpUrl(base);
   }
 
   /**
@@ -309,90 +306,6 @@ export class TrueNASClient {
     this.pending.clear();
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // Legacy REST methods — used by current handlers, removed in Phase 3.
-  // These do NOT use the WebSocket connection.
-  // ═══════════════════════════════════════════════════════════════════════
-
-  private get headers(): Record<string, string> {
-    return {
-      Authorization: `Bearer ${this.apiKey}`,
-      "Content-Type": "application/json",
-    };
-  }
-
-  private httpUrl(path: string): string {
-    const cleanPath = path.startsWith("/") ? path : `/${path}`;
-    return `${this.httpBaseUrl}/api/v2.0${cleanPath}`;
-  }
-
-  /** @deprecated Use call() — will be removed in Phase 3 */
-  async get<T = unknown>(path: string, params?: Record<string, unknown>): Promise<T> {
-    let url = this.httpUrl(path);
-    if (params) {
-      const searchParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(params)) {
-        if (value !== undefined && value !== null) {
-          searchParams.append(key, String(value));
-        }
-      }
-      const qs = searchParams.toString();
-      if (qs) url += `?${qs}`;
-    }
-    const res = await fetch(url, { method: "GET", headers: this.headers });
-    return this.handleHttpResponse<T>(res);
-  }
-
-  /** @deprecated Use call() — will be removed in Phase 3 */
-  async post<T = unknown>(path: string, body?: unknown): Promise<T> {
-    const res = await fetch(this.httpUrl(path), {
-      method: "POST",
-      headers: this.headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-    return this.handleHttpResponse<T>(res);
-  }
-
-  /** @deprecated Use call() — will be removed in Phase 3 */
-  async put<T = unknown>(path: string, body?: unknown): Promise<T> {
-    const res = await fetch(this.httpUrl(path), {
-      method: "PUT",
-      headers: this.headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-    return this.handleHttpResponse<T>(res);
-  }
-
-  /** @deprecated Use call() — will be removed in Phase 3 */
-  async delete<T = unknown>(path: string, body?: unknown): Promise<T> {
-    const res = await fetch(this.httpUrl(path), {
-      method: "DELETE",
-      headers: this.headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-    return this.handleHttpResponse<T>(res);
-  }
-
-  private async handleHttpResponse<T>(res: Response): Promise<T> {
-    const text = await res.text();
-    if (!res.ok) {
-      let message = `TrueNAS API error ${res.status}: ${res.statusText}`;
-      try {
-        const err = JSON.parse(text);
-        if (err.message) message = `TrueNAS API error ${res.status}: ${err.message}`;
-        else if (typeof err === "string") message = `TrueNAS API error ${res.status}: ${err}`;
-      } catch {
-        if (text) message += ` — ${text.slice(0, 500)}`;
-      }
-      throw new Error(message);
-    }
-    if (!text || text === "null") return null as T;
-    try {
-      return JSON.parse(text) as T;
-    } catch {
-      return text as T;
-    }
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -406,13 +319,6 @@ function toWsUrl(base: string): string {
   const scheme = base.startsWith("http://") ? "ws" : "wss";
   const host = base.replace(/^https?:\/\//, "").replace(/\/+$/, "");
   return `${scheme}://${host}/websocket`;
-}
-
-function toHttpUrl(base: string): string {
-  if (base.startsWith("ws://")) return base.replace("ws://", "http://").replace(/\/+$/, "");
-  if (base.startsWith("wss://")) return base.replace("wss://", "https://").replace(/\/+$/, "");
-  if (base.startsWith("http://") || base.startsWith("https://")) return base.replace(/\/+$/, "");
-  return `https://${base}`;
 }
 
 function isConnectionError(err: unknown): boolean {

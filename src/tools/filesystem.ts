@@ -14,7 +14,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       path: z.string().describe("Full filesystem path, e.g. '/mnt/tank/data'"),
     },
     async ({ path }) => {
-      const result = await client.post("/filesystem/stat", path);
+      const result = await client.call("filesystem.stat", [path]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -28,7 +28,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       offset: z.number().optional().default(0).describe("Number of entries to skip (default: 0)"),
     },
     async ({ path, limit, offset }) => {
-      const result = await client.post("/filesystem/listdir", { path, limit, offset });
+      const result = await client.call("filesystem.listdir", [path, [], { limit, offset }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -41,7 +41,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       mode: z.string().optional().default("755").describe("UNIX permission mode, e.g. '755' (default: '755')"),
     },
     async ({ path, mode }) => {
-      const result = await client.post("/filesystem/mkdir", { path, options: { mode } });
+      const result = await client.call("filesystem.mkdir", [path, { mode }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -64,7 +64,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (uid !== undefined) body.uid = uid;
       if (gid !== undefined) body.gid = gid;
       body.options = { recursive, traverse, stripacl };
-      const result = await client.post("/filesystem/setperm", body);
+      const result = await client.call("filesystem.setperm", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -77,7 +77,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       simplified: z.boolean().optional().default(false).describe("Return simplified ACL representation"),
     },
     async ({ path, simplified }) => {
-      const result = await client.post("/filesystem/getacl", { path, simplified });
+      const result = await client.call("filesystem.getacl", [path, simplified]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -107,7 +107,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (uid !== undefined) body.uid = uid;
       if (gid !== undefined) body.gid = gid;
       if (options !== undefined) body.options = options;
-      const result = await client.post("/filesystem/setacl", body);
+      const result = await client.call("filesystem.setacl", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -127,7 +127,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (uid !== undefined) body.uid = uid;
       if (gid !== undefined) body.gid = gid;
       body.options = { recursive, traverse };
-      const result = await client.post("/filesystem/chown", body);
+      const result = await client.call("filesystem.chown", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -141,7 +141,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Get the current reporting/metrics configuration.",
     {},
     async () => {
-      const result = await client.get("/reporting");
+      const result = await client.call("reporting.config");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -151,7 +151,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "List all available reporting graphs (CPU, memory, disk, network, etc.). Use the graph names with reporting_get_data to fetch time-series data.",
     {},
     async () => {
-      const result = await client.post("/reporting/netdata_graphs");
+      const result = await client.call("reporting.netdata_graphs");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -179,7 +179,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (end !== undefined) reporting_query.end = end;
       reporting_query.aggregate = aggregate;
       body.reporting_query = reporting_query;
-      const result = await client.post("/reporting/get_data", body);
+      const result = await client.call("reporting.get_data", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -193,7 +193,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Get directory services configuration (Active Directory / LDAP).",
     {},
     async () => {
-      const result = await client.get("/directoryservices");
+      const result = await client.call("directoryservices.config");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -205,7 +205,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       config: z.record(z.string(), z.unknown()).describe("Directory services configuration fields to update"),
     },
     async ({ config }) => {
-      const result = await client.put("/directoryservices", config);
+      const result = await client.call("directoryservices.update", [config]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -215,7 +215,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Get current directory services status including connection state and health.",
     {},
     async () => {
-      const result = await client.get("/directoryservices/status");
+      const result = await client.call("directoryservices.status");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -234,7 +234,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "Leave domain aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.post("/directoryservices/leave", { username, password });
+      const result = await client.call("directoryservices.leave", [{ username, password }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -244,7 +244,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Refresh the directory services cache. Forces re-read of users and groups from the directory server.",
     {},
     async () => {
-      const result = await client.post("/directoryservices/cache_refresh");
+      const result = await client.call("directoryservices.cache_refresh");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -254,7 +254,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Get Kerberos configuration settings.",
     {},
     async () => {
-      const result = await client.get("/kerberos");
+      const result = await client.call("kerberos.config");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -264,7 +264,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "List all configured Kerberos realms.",
     {},
     async () => {
-      const result = await client.get("/kerberos/realm");
+      const result = await client.call("kerberos.realm.query");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -274,7 +274,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "List all configured Kerberos keytabs.",
     {},
     async () => {
-      const result = await client.get("/kerberos/keytab");
+      const result = await client.call("kerberos.keytab.query");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -288,7 +288,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "List all system tunables (sysctl, loader, and rc variables).",
     {},
     async () => {
-      const result = await client.get("/tunable");
+      const result = await client.call("tunable.query");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -304,13 +304,13 @@ export function register(server: McpServer, client: TrueNASClient): void {
       enabled: z.boolean().optional().default(true).describe("Whether the tunable is active"),
     },
     async ({ type, var: varName, value, comment, enabled }) => {
-      const result = await client.post("/tunable", {
+      const result = await client.call("tunable.create", [{
         type,
         var: varName,
         value,
         comment,
         enabled,
-      });
+      }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -333,7 +333,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (value !== undefined) body.value = value;
       if (comment !== undefined) body.comment = comment;
       if (enabled !== undefined) body.enabled = enabled;
-      const result = await client.put(`/tunable/id/${id}`, body);
+      const result = await client.call("tunable.update", [id, body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -345,7 +345,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.number().describe("Tunable ID to delete"),
     },
     async ({ id }) => {
-      const result = await client.delete(`/tunable/id/${id}`);
+      const result = await client.call("tunable.delete", [id]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -359,7 +359,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Get the current SSH service configuration.",
     {},
     async () => {
-      const result = await client.get("/ssh");
+      const result = await client.call("ssh.config");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -393,7 +393,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (params.sftp_log_facility !== undefined) body.sftp_log_facility = params.sftp_log_facility;
       if (params.weak_ciphers !== undefined) body.weak_ciphers = params.weak_ciphers;
       if (params.options !== undefined) body.options = params.options;
-      const result = await client.put("/ssh", body);
+      const result = await client.call("ssh.update", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -407,7 +407,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Get the current FTP service configuration.",
     {},
     async () => {
-      const result = await client.get("/ftp");
+      const result = await client.call("ftp.config");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -460,7 +460,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       for (const [key, value] of Object.entries(params)) {
         if (value !== undefined) body[key] = value;
       }
-      const result = await client.put("/ftp", body);
+      const result = await client.call("ftp.update", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -474,7 +474,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Get the current SNMP service configuration.",
     {},
     async () => {
-      const result = await client.get("/snmp");
+      const result = await client.call("snmp.config");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -501,7 +501,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       for (const [key, value] of Object.entries(params)) {
         if (value !== undefined) body[key] = value;
       }
-      const result = await client.put("/snmp", body);
+      const result = await client.call("snmp.update", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -515,7 +515,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Get the current UPS service configuration.",
     {},
     async () => {
-      const result = await client.get("/ups");
+      const result = await client.call("ups.config");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -549,7 +549,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       for (const [key, value] of Object.entries(params)) {
         if (value !== undefined) body[key] = value;
       }
-      const result = await client.put("/ups", body);
+      const result = await client.call("ups.update", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -563,7 +563,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "List all privileges/roles configured on the system.",
     {},
     async () => {
-      const result = await client.get("/privilege");
+      const result = await client.call("privilege.query");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -589,14 +589,14 @@ export function register(server: McpServer, client: TrueNASClient): void {
       roles: z.array(z.string()).optional().default([]).describe("Array of role names to assign"),
     },
     async ({ name, local_groups, ds_groups, allowlist, web_shell, roles }) => {
-      const result = await client.post("/privilege", {
+      const result = await client.call("privilege.create", [{
         name,
         local_groups,
         ds_groups,
         allowlist,
         web_shell,
         roles,
-      });
+      }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -626,7 +626,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       for (const [key, value] of Object.entries(rest)) {
         if (value !== undefined) body[key] = value;
       }
-      const result = await client.put(`/privilege/id/${id}`, body);
+      const result = await client.call("privilege.update", [id, body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -638,7 +638,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.number().describe("Privilege ID to delete"),
     },
     async ({ id }) => {
-      const result = await client.delete(`/privilege/id/${id}`);
+      const result = await client.call("privilege.delete", [id]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -656,7 +656,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (services !== undefined) body.services = services;
       body["query-filters"] = query_filters;
       body["query-options"] = query_options;
-      const result = await client.post("/audit/query", body);
+      const result = await client.call("audit.query", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -666,7 +666,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Get the current audit configuration including retention and quota settings.",
     {},
     async () => {
-      const result = await client.get("/audit");
+      const result = await client.call("audit.config");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -686,7 +686,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       for (const [key, value] of Object.entries(params)) {
         if (value !== undefined) body[key] = value;
       }
-      const result = await client.put("/audit", body);
+      const result = await client.call("audit.update", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
