@@ -92,6 +92,26 @@ TrueNAS uses DDP (Distributed Data Protocol) over WebSocket at `/websocket`:
 
 Method mapping: `pool.query`, `pool.get_instance`, `pool.create`, `pool.update`, `pool.delete`, etc. Filter syntax: `[["field","op","value"]]`. Job polling: `core.get_jobs` with `[["id","=",jobId]]`.
 
+### Namespace Differences from REST API
+
+All method names verified against TrueNAS v25.10.2 official API docs. Key namespace differences from the REST API:
+
+| REST v2.0 | WebSocket JSON-RPC |
+|-----------|-------------------|
+| `/zfs/snapshot/*` | `pool.snapshot.*` |
+| `/service/start`, `/stop`, `/restart` | `service.control` with verb `"START"`, `"STOP"`, `"RESTART"` |
+| `/bootenv/*` | `boot.environment.*` (query, clone, activate, destroy, keep) |
+| `/pool/id/{id}/replace` | `pool.replace` |
+| `/pool/dataset/id/{id}/permission` | `filesystem.setperm` |
+| `/update/check_available` | `update.available_versions` |
+| `/update` (GET config) | `update.config` |
+| `/update/update` (apply) | `update.run` |
+| `/smart/test/*` | Not available — SMART namespace doesn't exist in WebSocket API |
+| `/disk/id/{id}` | `disk.query` with filter (no `disk.get_instance`) |
+| `/system/config/download` | `config.save` |
+
 ## Known Issues
 
 - `npm audit` shows 2 moderate vulnerabilities in transitive hono dependencies (not exploitable in stdio transport — hono's HTTP server is not used)
+- SMART test initiation (`disk_smart_test_run`) is not available via the TrueNAS WebSocket API. SMART test results are available through `disk.query` response data. Use the TrueNAS web UI to initiate SMART tests.
+- `dataset_set_permissions` uses `filesystem.setperm` as a substitute since `pool.dataset.permission` doesn't exist in the WebSocket API. The dataset ID is passed as the path — may need `/mnt/` prefix for mounted datasets during live testing.
