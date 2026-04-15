@@ -7,6 +7,7 @@ Forked from [spranab/truenas-mcp](https://github.com/spranab/truenas-mcp) with c
 ## Table of Contents
 
 - [Installation](#installation)
+- [Deployment](#deployment)
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [Safety Tiers](#safety-tiers)
@@ -28,6 +29,68 @@ npm run build
 ```
 
 Requires Node.js 18+.
+
+## Deployment
+
+Three deployment methods are supported:
+
+### 1. Direct Node.js (development / Claude Code MCP)
+
+Run the built TypeScript directly with Node.js. Best for local development and Claude Code MCP configurations.
+
+```bash
+TRUENAS_URL=wss://truenas.local:444 TRUENAS_API_KEY=... node dist/cli.js
+```
+
+### 2. Standalone Binary (production / AgentGateway)
+
+Compile to a self-contained Linux x64 binary with embedded Node.js runtime. No runtime dependencies — deploy like any other binary.
+
+```bash
+# Build the binary
+npm run build:binary
+
+# Output: dist/sr-truenas-mcp (55MB Linux x64 ELF)
+
+# Run it
+TRUENAS_URL=wss://truenas.local:444 TRUENAS_API_KEY=... ./dist/sr-truenas-mcp
+```
+
+The binary is produced by [esbuild](https://esbuild.github.io/) (bundling) + [@yao-pkg/pkg](https://github.com/nicolo-ribaudo/pkg) (Node.js embedding). It targets `node20-linux-x64` with GZip compression.
+
+GitHub releases include pre-built binaries as `sr-truenas-mcp-linux-x64.tar.gz` with SHA256 checksums.
+
+### 3. AgentGateway stdio Backend
+
+Deploy as a stdio backend in [AgentGateway](https://agentgateway.dev/) alongside other MCP servers. Uses the standalone binary from a GitHub release.
+
+**Init container** (downloads binary on first start):
+```yaml
+truenas-mcp-init:
+  image: busybox:1.37
+  command:
+    - sh
+    - -c
+    - |
+      if [ -f /bin-vol/sr-truenas-mcp ]; then exit 0; fi
+      wget -qO- "https://github.com/staticrevolution-com/sr-truenas-mcp/releases/download/v1.0.0/sr-truenas-mcp-linux-x64.tar.gz" | tar xzf - -C /bin-vol &&
+      chmod +x /bin-vol/sr-truenas-mcp
+  volumes:
+    - /path/to/agentgateway/bin:/bin-vol
+```
+
+**AgentGateway config.yaml target:**
+```yaml
+- name: truenas
+  stdio:
+    cmd: /opt/mcp-bin/sr-truenas-mcp
+    env:
+      TRUENAS_URL: "${TRUENAS_URL}"
+      TRUENAS_API_KEY: "${TRUENAS_API_KEY}"
+      TRUENAS_VERIFY_SSL: "${TRUENAS_VERIFY_SSL}"
+```
+
+The API key should be set as a Portainer stack environment variable (secret), not in the `.env` file.
 
 ## Configuration
 
