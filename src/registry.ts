@@ -60,8 +60,11 @@ export class ToolRegistry {
     // Tier 0: silently drop blocked actions — they are never registered
     if (BLOCKED_ACTIONS.has(name)) return;
 
+    // Fail-closed: refuse to register unclassified actions
+    const tier = getActionTier(name);
+    if (tier === undefined) return;
+
     const category = categorize(name);
-    const tier = getActionTier(name) ?? SafetyTier.Open;
     this.tools.set(name, { name, description, schema, handler, category, tier });
   }
 
@@ -172,10 +175,13 @@ export class ToolRegistry {
       }
     }
 
+    // Strip safety metadata before passing to handler
+    const { confirm: _c, reason: _r, ...handlerParams } = params;
+
     // Runtime Zod validation
     if (Object.keys(tool.schema).length > 0) {
       const zodShape = tool.schema as z.ZodRawShape;
-      const result = z.object(zodShape).passthrough().safeParse(params);
+      const result = z.object(zodShape).passthrough().safeParse(handlerParams);
       if (!result.success) {
         const issues = result.error.issues
           .map((i) => `${i.path.join(".")}: ${i.message}`)
@@ -186,7 +192,7 @@ export class ToolRegistry {
       return filterSensitiveFields(handlerResult);
     }
 
-    const handlerResult = await tool.handler(params);
+    const handlerResult = await tool.handler(handlerParams);
     return filterSensitiveFields(handlerResult);
   }
 }

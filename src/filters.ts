@@ -4,18 +4,46 @@
  */
 
 const SENSITIVE_KEYS = new Set([
-  "privatekey",
-  "private_key",
+  // Passwords
   "pass",
   "password",
   "passwd",
+  "new_password",
+  "old_password",
   "monpwd",
+  "v3_password",
+  "v3_privpassphrase",
+  "binddn_password",
+  "encryption_password",
+  // Keys
+  "privatekey",
+  "private_key",
   "encryption_key",
+  "key",
+  "api_key",
+  "api_token",
+  "access_key",
+  "secret_key",
+  "aws_secret_access_key",
+  "application_secret",
+  // Secrets & tokens
   "secret",
   "secretseed",
   "secret_seed",
-  "v3_password",
-  "v3_privpassphrase",
+  "token",
+  "bot_token",
+  "digitalocean_token",
+  "routing_key",
+  "webhook_url",
+  // Password hashes
+  "unixhash",
+  "smbhash",
+  "nt_password",
+  "lm_password",
+  // SNMP
+  "community",
+  // Passphrase
+  "passphrase",
 ]);
 
 const REDACTED = "[REDACTED]";

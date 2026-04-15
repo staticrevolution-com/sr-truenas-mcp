@@ -75,10 +75,10 @@ describe("Safety tier map", () => {
     expect(BLOCKED_ACTIONS).toEqual(tier0);
   });
 
-  it("has 14 tier 1 (confirm + reason) actions", () => {
+  it("has 20 tier 1 (confirm + reason) actions", () => {
     const tier1 = Object.entries(ACTION_TIERS)
       .filter(([, tier]) => tier === SafetyTier.ConfirmWithReason);
-    expect(tier1.length).toBe(14);
+    expect(tier1.length).toBe(20);
   });
 
   it("tier 1 contains the expected high-risk actions", () => {

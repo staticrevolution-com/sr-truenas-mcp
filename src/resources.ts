@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TrueNASClient } from "./client.js";
+import { filterSensitiveFields } from "./filters.js";
 
 export function registerResources(server: McpServer, client: TrueNASClient): void {
   // System overview resource
@@ -14,7 +15,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
           {
             uri: "truenas://system/info",
             mimeType: "application/json",
-            text: JSON.stringify(info, null, 2),
+            text: JSON.stringify(filterSensitiveFields(info), null, 2),
           },
         ],
       };
@@ -33,7 +34,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
           {
             uri: "truenas://storage/pools",
             mimeType: "application/json",
-            text: JSON.stringify(pools, null, 2),
+            text: JSON.stringify(filterSensitiveFields(pools), null, 2),
           },
         ],
       };
@@ -52,7 +53,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
           {
             uri: "truenas://storage/datasets",
             mimeType: "application/json",
-            text: JSON.stringify(datasets, null, 2),
+            text: JSON.stringify(filterSensitiveFields(datasets), null, 2),
           },
         ],
       };
@@ -71,7 +72,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
           {
             uri: "truenas://services",
             mimeType: "application/json",
-            text: JSON.stringify(services, null, 2),
+            text: JSON.stringify(filterSensitiveFields(services), null, 2),
           },
         ],
       };
@@ -90,7 +91,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
           {
             uri: "truenas://alerts",
             mimeType: "application/json",
-            text: JSON.stringify(alerts, null, 2),
+            text: JSON.stringify(filterSensitiveFields(alerts), null, 2),
           },
         ],
       };
@@ -109,7 +110,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
           {
             uri: "truenas://network/summary",
             mimeType: "application/json",
-            text: JSON.stringify(summary, null, 2),
+            text: JSON.stringify(filterSensitiveFields(summary), null, 2),
           },
         ],
       };
@@ -132,7 +133,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
           {
             uri: "truenas://sharing",
             mimeType: "application/json",
-            text: JSON.stringify({ smb, nfs, iscsi_targets: iscsiTargets }, null, 2),
+            text: JSON.stringify(filterSensitiveFields({ smb, nfs, iscsi_targets: iscsiTargets }), null, 2),
           },
         ],
       };
@@ -151,7 +152,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
           {
             uri: "truenas://vms",
             mimeType: "application/json",
-            text: JSON.stringify(vms, null, 2),
+            text: JSON.stringify(filterSensitiveFields(vms), null, 2),
           },
         ],
       };
@@ -170,7 +171,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
           {
             uri: "truenas://apps",
             mimeType: "application/json",
-            text: JSON.stringify(apps, null, 2),
+            text: JSON.stringify(filterSensitiveFields(apps), null, 2),
           },
         ],
       };
@@ -189,7 +190,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
           {
             uri: "truenas://disks",
             mimeType: "application/json",
-            text: JSON.stringify(disks, null, 2),
+            text: JSON.stringify(filterSensitiveFields(disks), null, 2),
           },
         ],
       };
@@ -208,7 +209,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
           {
             uri: "truenas://boot/environments",
             mimeType: "application/json",
-            text: JSON.stringify(bootenvs, null, 2),
+            text: JSON.stringify(filterSensitiveFields(bootenvs), null, 2),
           },
         ],
       };
@@ -227,7 +228,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
           {
             uri: "truenas://system/update",
             mimeType: "application/json",
-            text: JSON.stringify(config, null, 2),
+            text: JSON.stringify(filterSensitiveFields(config), null, 2),
           },
         ],
       };
