@@ -1,0 +1,121 @@
+import { describe, it, expect } from "vitest";
+import { ACTION_TIERS, SafetyTier, BLOCKED_ACTIONS } from "../safety.js";
+import { TrueNASClient } from "../client.js";
+import { buildRegistry } from "../tools/index.js";
+
+/**
+ * Build a real registry with a stub client to get all registered action names.
+ * Handlers are captured but never called — no network needed.
+ */
+function getRegisteredActions(): Set<string> {
+  const client = new TrueNASClient({
+    baseUrl: "http://stub",
+    apiKey: "stub",
+    verifySsl: true,
+  });
+  const registry = buildRegistry(client);
+  return new Set(registry.tools.keys());
+}
+
+describe("Safety tier map", () => {
+  const registeredActions = getRegisteredActions();
+  const tieredActions = new Set(Object.keys(ACTION_TIERS));
+
+  it("has a tier assignment for every registered action", () => {
+    const missing: string[] = [];
+    for (const action of registeredActions) {
+      if (!tieredActions.has(action)) {
+        missing.push(action);
+      }
+    }
+    expect(missing, `Actions without tier assignment: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("has no typos — every tier entry matches a registered action", () => {
+    const orphans: string[] = [];
+    for (const action of tieredActions) {
+      if (!registeredActions.has(action)) {
+        orphans.push(action);
+      }
+    }
+    expect(orphans, `Tier entries not matching any registered action: ${orphans.join(", ")}`).toEqual([]);
+  });
+
+  it("has exactly 8 blocked actions (tier 0)", () => {
+    const blocked = Object.entries(ACTION_TIERS)
+      .filter(([, tier]) => tier === SafetyTier.Blocked)
+      .map(([name]) => name)
+      .sort();
+
+    expect(blocked).toEqual([
+      "cronjob_create",
+      "cronjob_update",
+      "initshutdown_create",
+      "initshutdown_update",
+      "system_config_upload",
+      "system_reboot",
+      "system_shutdown",
+      "truenas_api_call",
+    ]);
+  });
+
+  it("BLOCKED_ACTIONS set matches tier 0 entries", () => {
+    const tier0 = new Set(
+      Object.entries(ACTION_TIERS)
+        .filter(([, tier]) => tier === SafetyTier.Blocked)
+        .map(([name]) => name)
+    );
+    expect(BLOCKED_ACTIONS).toEqual(tier0);
+  });
+
+  it("has 14 tier 1 (confirm + reason) actions", () => {
+    const tier1 = Object.entries(ACTION_TIERS)
+      .filter(([, tier]) => tier === SafetyTier.ConfirmWithReason);
+    expect(tier1.length).toBe(14);
+  });
+
+  it("tier 1 contains the expected high-risk actions", () => {
+    const tier1 = new Set(
+      Object.entries(ACTION_TIERS)
+        .filter(([, tier]) => tier === SafetyTier.ConfirmWithReason)
+        .map(([name]) => name)
+    );
+
+    const expected = [
+      "pool_create", "pool_export", "pool_replace_disk",
+      "disk_wipe", "dataset_delete", "snapshot_rollback",
+      "update_apply", "bootenv_activate", "bootenv_delete",
+      "boot_attach_disk", "boot_detach_disk",
+      "directory_services_leave", "system_config_download",
+      "network_commit_changes",
+    ];
+
+    for (const action of expected) {
+      expect(tier1.has(action), `Expected ${action} in tier 1`).toBe(true);
+    }
+  });
+
+  it("tier 2 count is in expected range (60-80)", () => {
+    const tier2 = Object.entries(ACTION_TIERS)
+      .filter(([, tier]) => tier === SafetyTier.Confirm);
+    expect(tier2.length).toBeGreaterThanOrEqual(60);
+    expect(tier2.length).toBeLessThanOrEqual(80);
+  });
+
+  it("total entries equals total registered actions (278)", () => {
+    expect(tieredActions.size).toBe(registeredActions.size);
+    expect(tieredActions.size).toBe(278);
+  });
+
+  it("every tier value is a valid SafetyTier", () => {
+    const validTiers = new Set([
+      SafetyTier.Blocked,
+      SafetyTier.ConfirmWithReason,
+      SafetyTier.Confirm,
+      SafetyTier.Open,
+    ]);
+    for (const [action, tier] of Object.entries(ACTION_TIERS)) {
+      expect(validTiers.has(tier), `Invalid tier ${tier} for action ${action}`).toBe(true);
+    }
+  });
+});

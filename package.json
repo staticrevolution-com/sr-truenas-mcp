@@ -1,0 +1,59 @@
+{
+  "name": "sr-truenas-mcp",
+  "version": "1.0.0",
+  "description": "Hardened MCP server for TrueNAS SCALE — safety-tiered actions, WebSocket JSON-RPC 2.0, response filtering",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "sr-truenas-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "truenas",
+    "mcp",
+    "model-context-protocol",
+    "nas",
+    "storage",
+    "zfs",
+    "smb",
+    "nfs",
+    "iscsi",
+    "homelab",
+    "truenas-scale",
+    "websocket",
+    "json-rpc"
+  ],
+  "author": "staticrevolution-com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/staticrevolution-com/sr-truenas-mcp.git"
+  },
+  "homepage": "https://github.com/staticrevolution-com/sr-truenas-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/staticrevolution-com/sr-truenas-mcp/issues"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
