@@ -219,7 +219,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       service: z.string().describe("Name of the service to start, e.g. 'ssh', 'smb', 'nfs'"),
     },
     async ({ service }) => {
-      const result = await client.call("service.start", [service]);
+      const result = await client.call("service.control", ["START", service]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -231,7 +231,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       service: z.string().describe("Name of the service to stop"),
     },
     async ({ service }) => {
-      const result = await client.call("service.stop", [service]);
+      const result = await client.call("service.control", ["STOP", service]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -243,7 +243,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       service: z.string().describe("Name of the service to restart"),
     },
     async ({ service }) => {
-      const result = await client.call("service.restart", [service]);
+      const result = await client.call("service.control", ["RESTART", service]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

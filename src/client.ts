@@ -111,10 +111,12 @@ export class TrueNASClient {
     });
 
     this.ws = ws;
-    this.startReadLoop();
 
-    // DDP handshake
+    // DDP handshake (before read loop — handshake uses its own temporary handler)
     await this.handshake();
+
+    // Start the generic read loop only after handshake completes
+    this.startReadLoop();
 
     // Authenticate
     const authResult = await this.callRaw("auth.login_with_api_key", [this.apiKey]);
@@ -127,20 +129,27 @@ export class TrueNASClient {
 
   private async handshake(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const cleanup = () => {
+        settled = true;
+        clearTimeout(timeout);
+        this.ws?.off("message", handler);
+      };
+
       const timeout = setTimeout(() => {
+        cleanup();
         reject(new Error("DDP handshake timed out"));
       }, 10_000);
 
       const handler = (data: WebSocket.Data) => {
+        if (settled) return;
         try {
           const msg = JSON.parse(data.toString());
           if (msg.msg === "connected") {
-            clearTimeout(timeout);
-            this.ws?.off("message", handler);
+            cleanup();
             resolve();
           } else if (msg.msg === "failed") {
-            clearTimeout(timeout);
-            this.ws?.off("message", handler);
+            cleanup();
             reject(new Error(`DDP handshake failed: ${JSON.stringify(msg)}`));
           }
         } catch {

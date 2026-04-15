@@ -202,7 +202,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
     "truenas://boot/environments",
     { description: "Boot environments with activation status" },
     async () => {
-      const bootenvs = await client.call("bootenv.query");
+      const bootenvs = await client.call("boot.environment.query");
       return {
         contents: [
           {
@@ -221,7 +221,7 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
     "truenas://system/update",
     { description: "System update configuration and available updates" },
     async () => {
-      const config = await client.call("update.get_auto_download");
+      const config = await client.call("update.config");
       return {
         contents: [
           {

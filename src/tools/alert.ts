@@ -330,7 +330,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Check for available system updates. Returns information about pending updates and the current train.",
     {},
     async () => {
-      const result = await client.call("update.check_available");
+      const result = await client.call("update.available_versions");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -340,7 +340,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Get the current update configuration, including the active update train.",
     {},
     async () => {
-      const result = await client.call("update.get_auto_download");
+      const result = await client.call("update.config");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -380,7 +380,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "Update aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.call("update.apply", [{ reboot }]);
+      const result = await client.call("update.run", [{ reboot }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -394,7 +394,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "List all boot environments. Shows name, active status, creation date, size, and keep flag.",
     {},
     async () => {
-      const result = await client.call("bootenv.query");
+      const result = await client.call("boot.environment.query");
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -409,7 +409,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     async ({ name, source }) => {
       const body: Record<string, unknown> = { name };
       if (source !== undefined) body.source = source;
-      const result = await client.call("bootenv.create", [body]);
+      const result = await client.call("boot.environment.clone", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -421,7 +421,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.string().describe("Name/ID of the boot environment to activate"),
     },
     async ({ id }) => {
-      const result = await client.call("bootenv.activate", [id]);
+      const result = await client.call("boot.environment.activate", [id]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -439,7 +439,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "Deletion aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.call("bootenv.delete", [id]);
+      const result = await client.call("boot.environment.destroy", [id]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -452,7 +452,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       keep: z.boolean().describe("Whether to keep (protect) this boot environment"),
     },
     async ({ id, keep }) => {
-      const result = await client.call("bootenv.set_attribute", [id, { keep }]);
+      const result = await client.call("boot.environment.keep", [id, { keep }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

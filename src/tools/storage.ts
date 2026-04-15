@@ -235,7 +235,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       const body: Record<string, unknown> = { label, disk };
       if (force !== undefined) body.force = force;
       if (preserve_settings !== undefined) body.preserve_settings = preserve_settings;
-      const result = await client.call("pool.replace_disk", [id, body]);
+      const result = await client.call("pool.replace", [id, body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -399,7 +399,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
       for (const [key, value] of Object.entries(props)) {
         if (value !== undefined) body[key] = value;
       }
-      const result = await client.call("pool.dataset.permission", [id, body]);
+      body.path = id; // filesystem.setperm expects path in body
+      const result = await client.call("filesystem.setperm", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -517,7 +518,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       const queryOptions: Record<string, unknown> = {};
       if (limit !== undefined) queryOptions.limit = limit;
       if (offset !== undefined) queryOptions.offset = offset;
-      const result = await client.call("zfs.snapshot.query", [queryFilters, queryOptions]);
+      const result = await client.call("pool.snapshot.query", [queryFilters, queryOptions]);
       let snapshots = Array.isArray(result) ? result : [result];
       if (dataset) {
         snapshots = snapshots.filter((s: any) => s.dataset === dataset);
@@ -531,7 +532,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Get snapshot details by ID (e.g. 'tank/data@snap1')",
     { id: z.string().describe("Snapshot ID (e.g. 'tank/data@snap1')") },
     async ({ id }) => {
-      const result = await client.call("zfs.snapshot.get_instance", [id]);
+      const result = await client.call("pool.snapshot.get_instance", [id]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -551,7 +552,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (recursive !== undefined) body.recursive = recursive;
       if (suspend_vms !== undefined) body.suspend_vms = suspend_vms;
       if (vmware_sync !== undefined) body.vmware_sync = vmware_sync;
-      const result = await client.call("zfs.snapshot.create", [body]);
+      const result = await client.call("pool.snapshot.create", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -572,7 +573,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       }
       const options: Record<string, unknown> = {};
       if (defer !== undefined) options.defer = defer;
-      const result = await client.call("zfs.snapshot.delete", [id, options]);
+      const result = await client.call("pool.snapshot.delete", [id, options]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -585,7 +586,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       dataset_dst: z.string().describe("Destination dataset path (e.g. 'tank/data-clone')"),
     },
     async ({ id, dataset_dst }) => {
-      const result = await client.call("zfs.snapshot.clone", [{ id, dataset_dst }]);
+      const result = await client.call("pool.snapshot.clone", [{ id, dataset_dst }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -610,7 +611,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (recursive !== undefined) options.recursive = recursive;
       if (recursive_clones !== undefined) options.recursive_clones = recursive_clones;
       if (force !== undefined) options.force = force;
-      const result = await client.call("zfs.snapshot.rollback", [id, options]);
+      const result = await client.call("pool.snapshot.rollback", [id, options]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );

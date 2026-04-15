@@ -594,7 +594,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.string().describe("Disk identifier, e.g. 'sda', 'nvme0n1'"),
     },
     async ({ id }) => {
-      const result = await client.call("disk.get_instance", [id]);
+      const disks = await client.call("disk.query", [[["name", "=", id]]]) as unknown[];
+      const result = Array.isArray(disks) && disks.length > 0 ? disks[0] : { error: `Disk "${id}" not found` };
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -673,12 +674,9 @@ export function register(server: McpServer, client: TrueNASClient): void {
       disk: z.string().optional().describe("Disk device name to filter results, e.g. 'sda'. Omit for all disks."),
     },
     async ({ disk }) => {
-      let result;
-      if (disk) {
-        result = await client.call("smart.test.results", [[["disk", "=", disk]]]);
-      } else {
-        result = await client.call("smart.test.results");
-      }
+      // SMART test results are included in disk.query response (tests_results field)
+      const filters = disk ? [[["name", "=", disk]]] : [];
+      const result = await client.call("disk.query", filters);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -691,8 +689,13 @@ export function register(server: McpServer, client: TrueNASClient): void {
       type: z.enum(["LONG", "SHORT", "CONVEYANCE", "OFFLINE"]).describe("Type of SMART test to run"),
     },
     async ({ disks, type }) => {
-      const result = await client.call("smart.test", [{ disks, type }]);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      // SMART test initiation is not available in the WebSocket API
+      return {
+        content: [{
+          type: "text",
+          text: `SMART test initiation is not available via the TrueNAS WebSocket API. Use the TrueNAS web UI to run SMART tests on disks: ${disks.join(", ")} (type: ${type}).`,
+        }],
+      };
     }
   );
 }
