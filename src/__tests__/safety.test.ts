@@ -5,7 +5,7 @@ import { buildRegistry } from "../tools/index.js";
 
 /**
  * Build a real registry with a stub client to get all registered action names.
- * Handlers are captured but never called — no network needed.
+ * Tier 0 actions are blocked at registration — they won't appear here.
  */
 function getRegisteredActions(): Set<string> {
   const client = new TrueNASClient({
@@ -31,14 +31,21 @@ describe("Safety tier map", () => {
     expect(missing, `Actions without tier assignment: ${missing.join(", ")}`).toEqual([]);
   });
 
-  it("has no typos — every tier entry matches a registered action", () => {
+  it("non-blocked tier entries match registered actions", () => {
     const orphans: string[] = [];
-    for (const action of tieredActions) {
+    for (const [action, tier] of Object.entries(ACTION_TIERS)) {
+      if (tier === SafetyTier.Blocked) continue; // blocked actions aren't registered
       if (!registeredActions.has(action)) {
         orphans.push(action);
       }
     }
-    expect(orphans, `Tier entries not matching any registered action: ${orphans.join(", ")}`).toEqual([]);
+    expect(orphans, `Non-blocked tier entries not found in registry: ${orphans.join(", ")}`).toEqual([]);
+  });
+
+  it("blocked actions are NOT registered", () => {
+    for (const action of BLOCKED_ACTIONS) {
+      expect(registeredActions.has(action), `Blocked action "${action}" should not be registered`).toBe(false);
+    }
   });
 
   it("has exactly 8 blocked actions (tier 0)", () => {
@@ -102,9 +109,12 @@ describe("Safety tier map", () => {
     expect(tier2.length).toBeLessThanOrEqual(80);
   });
 
-  it("total entries equals total registered actions (278)", () => {
-    expect(tieredActions.size).toBe(registeredActions.size);
+  it("tier map has 278 total entries (all actions classified)", () => {
     expect(tieredActions.size).toBe(278);
+  });
+
+  it("registered actions = 278 - 8 blocked = 270", () => {
+    expect(registeredActions.size).toBe(270);
   });
 
   it("every tier value is a valid SafetyTier", () => {
