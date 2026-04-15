@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
+import { validateTrueNASPath } from "../validation.js";
 
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
@@ -14,7 +15,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
       path: z.string().describe("Full filesystem path, e.g. '/mnt/tank/data'"),
     },
     async ({ path }) => {
-      const result = await client.call("filesystem.stat", [path]);
+      const validPath = validateTrueNASPath(path);
+      const result = await client.call("filesystem.stat", [validPath]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -28,7 +30,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
       offset: z.number().optional().default(0).describe("Number of entries to skip (default: 0)"),
     },
     async ({ path, limit, offset }) => {
-      const result = await client.call("filesystem.listdir", [path, [], { limit, offset }]);
+      const validPath = validateTrueNASPath(path);
+      const result = await client.call("filesystem.listdir", [validPath, [], { limit, offset }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -41,7 +44,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
       mode: z.string().optional().default("755").describe("UNIX permission mode, e.g. '755' (default: '755')"),
     },
     async ({ path, mode }) => {
-      const result = await client.call("filesystem.mkdir", [path, { mode }]);
+      const validPath = validateTrueNASPath(path);
+      const result = await client.call("filesystem.mkdir", [validPath, { mode }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -59,7 +63,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
       stripacl: z.boolean().optional().default(false).describe("Strip existing ACLs when setting permissions"),
     },
     async ({ path, mode, uid, gid, recursive, traverse, stripacl }) => {
-      const body: Record<string, unknown> = { path };
+      const validPath = validateTrueNASPath(path);
+      const body: Record<string, unknown> = { path: validPath };
       if (mode !== undefined) body.mode = mode;
       if (uid !== undefined) body.uid = uid;
       if (gid !== undefined) body.gid = gid;
@@ -77,7 +82,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
       simplified: z.boolean().optional().default(false).describe("Return simplified ACL representation"),
     },
     async ({ path, simplified }) => {
-      const result = await client.call("filesystem.getacl", [path, simplified]);
+      const validPath = validateTrueNASPath(path);
+      const result = await client.call("filesystem.getacl", [validPath, simplified]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -101,7 +107,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "ACL change aborted: 'confirm' must be set to true." }],
         };
       }
-      const body: Record<string, unknown> = { path, dacl };
+      const validPath = validateTrueNASPath(path);
+      const body: Record<string, unknown> = { path: validPath, dacl };
       if (nfs41_flags !== undefined) body.nfs41_flags = nfs41_flags;
       if (acltype !== undefined) body.acltype = acltype;
       if (uid !== undefined) body.uid = uid;
@@ -123,7 +130,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
       traverse: z.boolean().optional().default(false).describe("Traverse filesystem boundaries"),
     },
     async ({ path, uid, gid, recursive, traverse }) => {
-      const body: Record<string, unknown> = { path };
+      const validPath = validateTrueNASPath(path);
+      const body: Record<string, unknown> = { path: validPath };
       if (uid !== undefined) body.uid = uid;
       if (gid !== undefined) body.gid = gid;
       body.options = { recursive, traverse };

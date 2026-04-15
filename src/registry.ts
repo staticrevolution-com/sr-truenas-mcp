@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { ACTION_TIERS, SafetyTier, BLOCKED_ACTIONS, getActionTier } from "./safety.js";
+import { filterSensitiveFields } from "./filters.js";
 
 export interface CapturedTool {
   name: string;
@@ -181,10 +182,12 @@ export class ToolRegistry {
           .join("; ");
         return { error: `Validation failed for "${action}": ${issues}` };
       }
-      return tool.handler(result.data as Record<string, unknown>);
+      const handlerResult = await tool.handler(result.data as Record<string, unknown>);
+      return filterSensitiveFields(handlerResult);
     }
 
-    return tool.handler(params);
+    const handlerResult = await tool.handler(params);
+    return filterSensitiveFields(handlerResult);
   }
 }
 
