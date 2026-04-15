@@ -16,6 +16,7 @@
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "type-check": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
