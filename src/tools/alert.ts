@@ -174,7 +174,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.number().describe("ID of the alert service to test"),
     },
     async ({ id }) => {
-      const result = await client.call("alertservice.test", [id]);
+      // alertservice.test expects a full config object, not an ID.
+      // Fetch the existing service config, then pass it to test.
+      const svc = await client.call("alertservice.get_instance", [id]) as Record<string, unknown>;
+      const result = await client.call("alertservice.test", [svc]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -347,12 +350,16 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "update_config_set",
-    "Set the update configuration. Currently supports changing the update train.",
+    "Set the update configuration — auto-check and update profile.",
     {
-      train: z.string().describe("Name of the update train to switch to"),
+      autocheck: z.boolean().optional().describe("Enable automatic update checking"),
+      profile: z.string().optional().describe("Update profile to use"),
     },
-    async ({ train }) => {
-      const result = await client.call("update.update", [{ train }]);
+    async ({ autocheck, profile }) => {
+      const body: Record<string, unknown> = {};
+      if (autocheck !== undefined) body.autocheck = autocheck;
+      if (profile !== undefined) body.profile = profile;
+      const result = await client.call("update.update", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -360,9 +367,12 @@ export function register(server: McpServer, client: TrueNASClient): void {
   server.tool(
     "update_download",
     "Download pending system updates. This starts the download process; the system is not updated until update_apply is called.",
-    {},
-    async () => {
-      const result = await client.call("update.download");
+    {
+      train: z.string().optional().describe("Update train to download from (default: current)"),
+      version: z.string().optional().describe("Specific version to download (default: latest)"),
+    },
+    async ({ train, version }) => {
+      const result = await client.call("update.download", [train ?? null, version ?? null]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -407,8 +417,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
       source: z.string().optional().describe("Name of the source boot environment to clone. Defaults to the currently active one."),
     },
     async ({ name, source }) => {
-      const body: Record<string, unknown> = { name };
-      if (source !== undefined) body.source = source;
+      const body: Record<string, unknown> = { target: name };
+      if (source !== undefined) body.id = source;
       const result = await client.call("boot.environment.clone", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
@@ -421,7 +431,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.string().describe("Name/ID of the boot environment to activate"),
     },
     async ({ id }) => {
-      const result = await client.call("boot.environment.activate", [id]);
+      const result = await client.call("boot.environment.activate", [{ id }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -439,7 +449,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "Deletion aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.call("boot.environment.destroy", [id]);
+      const result = await client.call("boot.environment.destroy", [{ id }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -452,7 +462,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       keep: z.boolean().describe("Whether to keep (protect) this boot environment"),
     },
     async ({ id, keep }) => {
-      const result = await client.call("boot.environment.keep", [id, { keep }]);
+      const result = await client.call("boot.environment.keep", [{ id, value: keep }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

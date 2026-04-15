@@ -468,16 +468,16 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "user_set_password",
-    "Set or change a user's password by their numeric ID.",
+    "Set or change a user's password by username.",
     {
-      id: z.number().describe("Numeric user ID"),
-      password: z.string().describe("New password"),
+      username: z.string().describe("Username of the account"),
+      new_password: z.string().describe("New password"),
       old_password: z.string().optional().describe("Current password (required for non-root users changing their own password)"),
     },
-    async ({ id, password, old_password }) => {
-      const body: Record<string, unknown> = { password };
+    async ({ username, new_password, old_password }) => {
+      const body: Record<string, unknown> = { username, new_password };
       if (old_password !== undefined) body.old_password = old_password;
-      const result = await client.call("user.set_password", [id, body]);
+      const result = await client.call("user.set_password", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

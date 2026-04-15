@@ -45,7 +45,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     },
     async ({ path, mode }) => {
       const validPath = validateTrueNASPath(path);
-      const result = await client.call("filesystem.mkdir", [validPath, { mode }]);
+      const result = await client.call("filesystem.mkdir", [{ path: validPath, options: { mode } }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -181,13 +181,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
       aggregate: z.boolean().optional().default(true).describe("Whether to aggregate data points"),
     },
     async ({ graphs, start, end, aggregate }) => {
-      const body: Record<string, unknown> = { graphs };
-      const reporting_query: Record<string, unknown> = {};
-      if (start !== undefined) reporting_query.start = start;
-      if (end !== undefined) reporting_query.end = end;
-      reporting_query.aggregate = aggregate;
-      body.reporting_query = reporting_query;
-      const result = await client.call("reporting.get_data", [body]);
+      const query: Record<string, unknown> = { aggregate };
+      if (start !== undefined) query.start = start;
+      if (end !== undefined) query.end = end;
+      const result = await client.call("reporting.get_data", [graphs, query]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -242,7 +239,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "Leave domain aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.call("directoryservices.leave", [{ username, password }]);
+      const result = await client.call("directoryservices.leave", [{ credential: { credential_type: "KERBEROS_USER", username, password } }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

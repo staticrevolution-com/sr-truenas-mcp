@@ -302,7 +302,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       const body: Record<string, unknown> = {};
       if (host !== undefined) body.host = host;
       if (protocol !== undefined) body.protocol = protocol;
-      const result = await client.call("vm.get_display_web_uri", [id, body]);
+      const result = await client.call("vm.get_display_web_uri", [id, host ?? "", { protocol }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -494,7 +494,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       app_name: z.string().describe("Name of the app to pull images for"),
     },
     async ({ app_name }) => {
-      const result = await client.call("app.pull_images", [{ app_name }]);
+      const result = await client.call("app.pull_images", [app_name]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

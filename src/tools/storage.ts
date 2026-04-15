@@ -166,11 +166,11 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "pool_scrub",
     "Start, stop, or pause a pool scrub",
     {
-      id: z.number().describe("Pool ID"),
+      name: z.string().describe("Pool name (e.g. 'tank')"),
       action: z.enum(["START", "STOP", "PAUSE"]).describe("Scrub action"),
     },
-    async ({ id, action }) => {
-      const result = await client.call("pool.scrub", [id, action]);
+    async ({ name, action }) => {
+      const result = await client.call("pool.scrub.scrub", [name, action]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -586,7 +586,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       dataset_dst: z.string().describe("Destination dataset path (e.g. 'tank/data-clone')"),
     },
     async ({ id, dataset_dst }) => {
-      const result = await client.call("pool.snapshot.clone", [{ id, dataset_dst }]);
+      const result = await client.call("pool.snapshot.clone", [{ snapshot: id, dataset_dst }]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
