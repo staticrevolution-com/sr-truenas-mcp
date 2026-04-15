@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
+import { validateTrueNASPath } from "../validation.js";
 
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
@@ -390,7 +391,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (params.password !== undefined) body.password = params.password;
       if (params.uid !== undefined) body.uid = params.uid;
       if (params.smb !== undefined) body.smb = params.smb;
-      if (params.home !== undefined) body.home = params.home;
+      if (params.home !== undefined) { validateTrueNASPath(params.home); body.home = params.home; }
       if (params.home_create !== undefined) body.home_create = params.home_create;
       if (params.shell !== undefined) body.shell = params.shell;
       if (params.sudo_commands !== undefined) body.sudo_commands = params.sudo_commands;
@@ -428,6 +429,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     },
     async (params) => {
       const { id, ...rest } = params;
+      if (rest.home !== undefined) validateTrueNASPath(rest.home as string);
       const body: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(rest)) {
         if (value !== undefined) body[key] = value;

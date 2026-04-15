@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
+import { validateTrueNASPath } from "../validation.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -48,13 +49,13 @@ export function register(server: McpServer, client: TrueNASClient): void {
       enabled: z.boolean().optional().describe("Whether the share is enabled"),
       home: z.boolean().optional().describe("Use as home share"),
       purpose: z.string().optional().describe("Share purpose preset"),
-      ro: z.boolean().optional().describe("Read-only"),
+      readonly: z.boolean().optional().describe("Read-only"),
       browsable: z.boolean().optional().describe("Visible when browsing shares"),
       guestok: z.boolean().optional().describe("Allow guest access"),
       hostsallow: z.array(z.string()).optional().describe("Allowed hosts"),
       hostsdeny: z.array(z.string()).optional().describe("Denied hosts"),
       recyclebin: z.boolean().optional().describe("Enable recycle bin"),
-      abe: z.boolean().optional().describe("Access-based enumeration"),
+      access_based_share_enumeration: z.boolean().optional().describe("Access-based enumeration"),
       acl: z.boolean().optional().describe("Enable ACL support"),
       durablehandle: z.boolean().optional().describe("Enable durable handles"),
       streams: z.boolean().optional().describe("Enable alternate data streams"),
@@ -63,6 +64,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       auxsmbconf: z.string().optional().describe("Auxiliary smb.conf parameters"),
     },
     async (params) => {
+      if (params.path) validateTrueNASPath(params.path);
       const body = clean(params);
       return jsonContent(await client.call("sharing.smb.create", [body]));
     },
@@ -79,13 +81,13 @@ export function register(server: McpServer, client: TrueNASClient): void {
       enabled: z.boolean().optional().describe("Whether the share is enabled"),
       home: z.boolean().optional().describe("Use as home share"),
       purpose: z.string().optional().describe("Share purpose preset"),
-      ro: z.boolean().optional().describe("Read-only"),
+      readonly: z.boolean().optional().describe("Read-only"),
       browsable: z.boolean().optional().describe("Visible when browsing shares"),
       guestok: z.boolean().optional().describe("Allow guest access"),
       hostsallow: z.array(z.string()).optional().describe("Allowed hosts"),
       hostsdeny: z.array(z.string()).optional().describe("Denied hosts"),
       recyclebin: z.boolean().optional().describe("Enable recycle bin"),
-      abe: z.boolean().optional().describe("Access-based enumeration"),
+      access_based_share_enumeration: z.boolean().optional().describe("Access-based enumeration"),
       acl: z.boolean().optional().describe("Enable ACL support"),
       durablehandle: z.boolean().optional().describe("Enable durable handles"),
       streams: z.boolean().optional().describe("Enable alternate data streams"),
@@ -94,6 +96,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       auxsmbconf: z.string().optional().describe("Auxiliary smb.conf parameters"),
     },
     async ({ id, ...rest }) => {
+      if (rest.path) validateTrueNASPath(rest.path);
       const body = clean(rest);
       return jsonContent(await client.call("sharing.smb.update", [id, body]));
     },
@@ -167,8 +170,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "nfs_share_create",
     "Create a new NFS share/export",
     {
-      path: z.string().optional().describe("Single filesystem path to export"),
-      paths: z.array(z.string()).optional().describe("Multiple filesystem paths to export"),
+      path: z.string().describe("Filesystem path to export (e.g. '/mnt/tank/data')"),
       comment: z.string().optional().describe("Description / comment"),
       enabled: z.boolean().optional().describe("Whether the share is enabled"),
       ro: z.boolean().optional().describe("Read-only"),
@@ -181,6 +183,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       security: z.array(z.string()).optional().describe("Security flavors (e.g. sys, krb5, krb5i, krb5p)"),
     },
     async (params) => {
+      if (params.path) validateTrueNASPath(params.path);
       const body = clean(params);
       return jsonContent(await client.call("sharing.nfs.create", [body]));
     },
@@ -191,8 +194,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Update an existing NFS share/export",
     {
       id: z.number().describe("NFS share ID"),
-      path: z.string().optional().describe("Single filesystem path to export"),
-      paths: z.array(z.string()).optional().describe("Multiple filesystem paths to export"),
+      path: z.string().optional().describe("Filesystem path to export"),
       comment: z.string().optional().describe("Description / comment"),
       enabled: z.boolean().optional().describe("Whether the share is enabled"),
       ro: z.boolean().optional().describe("Read-only"),
@@ -205,6 +207,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       security: z.array(z.string()).optional().describe("Security flavors (e.g. sys, krb5, krb5i, krb5p)"),
     },
     async ({ id, ...rest }) => {
+      if (rest.path) validateTrueNASPath(rest.path as string);
       const body = clean(rest);
       return jsonContent(await client.call("sharing.nfs.update", [id, body]));
     },
@@ -394,6 +397,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       enabled: z.boolean().optional().describe("Whether the extent is enabled"),
     },
     async (params) => {
+      if (params.path) validateTrueNASPath(params.path);
       const body = clean(params);
       return jsonContent(await client.call("iscsi.extent.create", [body]));
     },
@@ -419,6 +423,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       enabled: z.boolean().optional().describe("Whether the extent is enabled"),
     },
     async ({ id, ...rest }) => {
+      if (rest.path) validateTrueNASPath(rest.path as string);
       const body = clean(rest);
       return jsonContent(await client.call("iscsi.extent.update", [id, body]));
     },

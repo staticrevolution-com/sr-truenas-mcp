@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
+import { validateTrueNASPath } from "../validation.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -184,7 +185,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
       args: z.string().optional().describe("Extra rclone arguments"),
       snapshot: z.boolean().optional().describe("Use ZFS snapshot for consistent data"),
     },
-    async (params) => jsonContent(await client.call("cloudsync.create", [clean(params)])),
+    async (params) => {
+      if (params.path) validateTrueNASPath(params.path);
+      return jsonContent(await client.call("cloudsync.create", [clean(params)]));
+    },
   );
 
   server.tool(
@@ -201,7 +205,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
       enabled: z.boolean().optional().describe("Enable this task"),
       attributes: z.record(z.string(), z.unknown()).optional().describe("Provider-specific attributes"),
     },
-    async ({ id, ...rest }) => jsonContent(await client.call("cloudsync.update", [id, clean(rest)])),
+    async ({ id, ...rest }) => {
+      if (rest.path) validateTrueNASPath(rest.path as string);
+      return jsonContent(await client.call("cloudsync.update", [id, clean(rest)]));
+    },
   );
 
   server.tool(
@@ -240,7 +247,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
       transfer_mode: z.enum(["SYNC", "COPY", "MOVE"]).describe("Transfer mode for restoration"),
       path: z.string().describe("Local path to restore to"),
     },
-    async ({ id, ...rest }) => jsonContent(await client.call("cloudsync.restore", [id, rest])),
+    async ({ id, ...rest }) => {
+      if (rest.path) validateTrueNASPath(rest.path as string);
+      return jsonContent(await client.call("cloudsync.restore", [id, rest]));
+    },
   );
 
   server.tool(
@@ -345,7 +355,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
       keep_last: z.number().optional().describe("Number of recent backups to keep"),
       transfer_setting: z.string().optional().describe("Transfer setting (DEFAULT, PERFORMANCE, FAST_STORAGE)"),
     },
-    async (params) => jsonContent(await client.call("cloud_backup.create", [clean(params)])),
+    async (params) => {
+      if (params.path) validateTrueNASPath(params.path);
+      return jsonContent(await client.call("cloud_backup.create", [clean(params)]));
+    },
   );
 
   server.tool(
@@ -362,7 +375,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
       password: z.string().optional().describe("Encryption password"),
       keep_last: z.number().optional().describe("Number of recent backups to keep"),
     },
-    async ({ id, ...rest }) => jsonContent(await client.call("cloud_backup.update", [id, clean(rest)])),
+    async ({ id, ...rest }) => {
+      if (rest.path) validateTrueNASPath(rest.path as string);
+      return jsonContent(await client.call("cloud_backup.update", [id, clean(rest)]));
+    },
   );
 
   server.tool(
@@ -489,7 +505,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
       enabled: z.boolean().optional().describe("Enable this task"),
       ssh_credentials: z.number().optional().describe("SSH credential ID for SSH mode"),
     },
-    async (params) => jsonContent(await client.call("rsynctask.create", [clean(params)])),
+    async (params) => {
+      if (params.path) validateTrueNASPath(params.path);
+      return jsonContent(await client.call("rsynctask.create", [clean(params)]));
+    },
   );
 
   server.tool(
@@ -509,7 +528,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
       schedule: z.object(scheduleSchema).optional().describe("Cron schedule"),
       enabled: z.boolean().optional().describe("Enable this task"),
     },
-    async ({ id, ...rest }) => jsonContent(await client.call("rsynctask.update", [id, clean(rest)])),
+    async ({ id, ...rest }) => {
+      if (rest.path) validateTrueNASPath(rest.path as string);
+      return jsonContent(await client.call("rsynctask.update", [id, clean(rest)]));
+    },
   );
 
   server.tool(
