@@ -259,9 +259,15 @@ export function register(server: McpServer, client: TrueNASClient): void {
       secretseed: z.boolean().optional().default(false).describe("Include the password secret seed in the backup"),
       pool_keys: z.boolean().optional().default(false).describe("Include pool encryption keys in the backup"),
     },
-    async ({ secretseed, pool_keys }) => {
-      const result = await client.call("config.save", [{ secretseed, pool_keys }]);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    async () => {
+      // config.save requires a pipe/output stream for the binary database file,
+      // which is not supported over simple WebSocket JSON-RPC calls.
+      return {
+        content: [{
+          type: "text",
+          text: "System config download requires a binary file transfer pipe that is not available via the WebSocket API. Use the TrueNAS web UI: System > General > Manage Configuration > Download File.",
+        }],
+      };
     }
   );
 
