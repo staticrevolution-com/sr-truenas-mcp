@@ -654,13 +654,17 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "disk_temperatures",
-    "Get current temperatures for one or more disks. Provide disk device names like 'sda', 'sdb'.",
+    "Get current temperatures for one or more disks. Omit names to get all disk temperatures.",
     {
-      names: z.array(z.string()).describe("Array of disk device names, e.g. ['sda', 'sdb']"),
-      days: z.number().optional().describe("Number of days of historical data to include"),
+      names: z.array(z.string()).optional().describe("Disk device names, e.g. ['sda', 'sdb']. Omit for all disks."),
     },
     async (params) => {
-      const result = await client.call("disk.temperatures", [params.names]);
+      let names = params.names;
+      if (!names) {
+        const disks = await client.call("disk.query") as Array<{ name: string }>;
+        names = disks.map((d) => d.name);
+      }
+      const result = await client.call("disk.temperatures", [names]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
