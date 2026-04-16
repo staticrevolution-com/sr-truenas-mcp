@@ -266,14 +266,33 @@ This hierarchical design keeps the LLM's tool context to ~200 tokens instead of 
 
 ## Safety Tiers
 
-Every action is classified into one of four safety tiers. Enforcement is centralized in the tool registry — individual handlers don't need to implement their own safety checks.
+Every action is classified into one of four safety tiers. Enforcement is centralized in the tool registry with a two-call confirmation pattern for destructive operations.
 
 | Tier | Gate | Count | Description |
 |------|------|-------|-------------|
 | **0 — Blocked** | Never registered | 8 | Dangerous operations that should never be available via MCP |
-| **1 — Confirm + Reason** | `confirm: true` + `reason: "..."` | 14 | Irreversible or high-blast-radius operations |
-| **2 — Confirm** | `confirm: true` | 69 | Destructive writes and configuration changes |
-| **3 — Open** | None | 187 | Reads, safe creates, queries |
+| **1 — Confirm + Reason** | `confirm: true` + `reason: "..."` | 20 | Irreversible, high-blast-radius, or privilege-escalation operations |
+| **2 — Confirm** | `confirm: true` | 81 | Destructive writes, config changes, share creation |
+| **3 — Open** | None | 169 | Reads, safe queries |
+
+### Confirmation Flow
+
+When a tier 1 or 2 action is called without `confirm: true`, the server returns a detailed warning instead of executing:
+
+```
+⚠ DESTRUCTIVE OPERATION: service_stop
+
+Stop a running service by name (e.g. 'ssh', 'smb', 'nfs').
+
+Parameters:
+  service: "ssh"
+
+This action modifies system state and may not be easily reversible.
+To proceed, the user must explicitly approve. Then call again with:
+  confirm: true
+```
+
+The LLM presents this warning to the user and only proceeds after explicit approval. Tier 1 actions additionally require a `reason` string explaining why the operation is needed.
 
 ### Blocked Actions (Tier 0)
 
@@ -287,16 +306,18 @@ These actions are never registered and cannot be discovered or executed:
 
 ### High-Risk Actions (Tier 1)
 
-Require both `confirm: true` and a `reason` string explaining why the operation is being performed:
+Require both `confirm: true` and a `reason` string. Includes privilege escalation vectors:
 
-`pool_create`, `pool_export`, `pool_replace_disk`, `disk_wipe`, `dataset_delete`, `snapshot_rollback`, `update_apply`, `bootenv_activate`, `bootenv_delete`, `boot_attach_disk`, `boot_detach_disk`, `directory_services_leave`, `system_config_download`, `network_commit_changes`
+`pool_create`, `pool_export`, `pool_replace_disk`, `disk_wipe`, `dataset_delete`, `snapshot_rollback`, `update_apply`, `bootenv_activate`, `bootenv_delete`, `boot_attach_disk`, `boot_detach_disk`, `directory_services_leave`, `system_config_download`, `network_commit_changes`, `user_create`, `user_update`, `group_update`, `privilege_create`, `privilege_update`, `ssh_config_update`
 
 ### Additional Safety Features
 
-- **Response filtering**: All responses pass through a sensitive field filter that redacts `password`, `privatekey`, `private_key`, `secret`, `secretseed`, `encryption_key`, and other credential fields
-- **Path validation**: All 7 filesystem handlers validate that paths start with `/mnt/`, reject `..` traversal, and reject null bytes
-- **Per-connection TLS**: SSL verification is configured per WebSocket connection, not via `process.env` mutation
-- **Runtime validation**: All handler parameters are validated through Zod schemas before execution
+- **Fail-closed registration**: Unclassified actions are rejected — no action can bypass tier assignment
+- **Response filtering**: All tool and resource responses pass through a 36-pattern sensitive field filter (passwords, keys, tokens, hashes, secrets)
+- **Path validation**: All 22 filesystem-touching handlers validate paths start with `/mnt/`, reject `..` traversal and null bytes
+- **Per-connection TLS**: SSL verification configured per WebSocket connection, not via `process.env` mutation
+- **Runtime validation**: All handler parameters validated through Zod schemas before execution
+- **Defense-in-depth**: 32 handlers have in-handler `confirm` checks in addition to registry-level enforcement
 
 ## Categories & Actions
 
