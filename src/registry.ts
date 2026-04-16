@@ -175,8 +175,9 @@ export class ToolRegistry {
       }
     }
 
-    // Strip safety metadata before passing to handler
-    const { confirm: _c, reason: _r, ...handlerParams } = params;
+    // Strip reason (safety metadata only) before passing to handler.
+    // confirm is kept — many handlers use it as defense-in-depth.
+    const { reason: _r, ...handlerParams } = params;
 
     // Runtime Zod validation
     if (Object.keys(tool.schema).length > 0) {
