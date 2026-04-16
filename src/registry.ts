@@ -155,22 +155,52 @@ export class ToolRegistry {
       };
     }
 
-    // Safety tier enforcement
+    // Safety tier enforcement — return detailed warnings for unconfirmed destructive actions
     if (tool.tier === SafetyTier.ConfirmWithReason) {
       if (params.confirm !== true) {
+        const paramSummary = Object.entries(params)
+          .filter(([k]) => k !== "confirm" && k !== "reason")
+          .map(([k, v]) => `  ${k}: ${JSON.stringify(v)}`)
+          .join("\n");
         return {
-          error: `Action "${action}" is a high-risk operation (tier 1). Pass confirm: true and reason: "explanation" to proceed.`,
+          content: [{
+            type: "text",
+            text: `⚠ HIGH-RISK OPERATION: ${action}\n\n` +
+              `${tool.description}\n\n` +
+              `Parameters:\n${paramSummary || "  (none)"}\n\n` +
+              `This is a tier 1 action — it may be irreversible or have high blast radius.\n` +
+              `To proceed, the user must explicitly approve. Then call again with:\n` +
+              `  confirm: true\n` +
+              `  reason: "explanation of why this operation is needed"`,
+          }],
         };
       }
       if (typeof params.reason !== "string" || params.reason.trim().length === 0) {
         return {
-          error: `Action "${action}" requires a non-empty reason string explaining why this operation is being performed.`,
+          content: [{
+            type: "text",
+            text: `⚠ REASON REQUIRED: ${action}\n\n` +
+              `This tier 1 action requires a reason explaining why it is being performed.\n` +
+              `Call again with reason: "your explanation"`,
+          }],
         };
       }
     } else if (tool.tier === SafetyTier.Confirm) {
       if (params.confirm !== true) {
+        const paramSummary = Object.entries(params)
+          .filter(([k]) => k !== "confirm")
+          .map(([k, v]) => `  ${k}: ${JSON.stringify(v)}`)
+          .join("\n");
         return {
-          error: `Action "${action}" is a destructive operation (tier 2). Pass confirm: true to proceed.`,
+          content: [{
+            type: "text",
+            text: `⚠ DESTRUCTIVE OPERATION: ${action}\n\n` +
+              `${tool.description}\n\n` +
+              `Parameters:\n${paramSummary || "  (none)"}\n\n` +
+              `This action modifies system state and may not be easily reversible.\n` +
+              `To proceed, the user must explicitly approve. Then call again with:\n` +
+              `  confirm: true`,
+          }],
         };
       }
     }

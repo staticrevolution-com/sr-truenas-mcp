@@ -224,7 +224,7 @@ export const ACTION_TIERS: Record<string, SafetyTier> = {
   snapshot_list: SafetyTier.Open,
   snapshot_get: SafetyTier.Open,
   snapshot_create: SafetyTier.Open,
-  snapshot_delete: SafetyTier.Open,
+  snapshot_delete: SafetyTier.Confirm,
   snapshot_clone: SafetyTier.Open,
   snapshot_task_list: SafetyTier.Open,
   snapshot_task_create: SafetyTier.Open,

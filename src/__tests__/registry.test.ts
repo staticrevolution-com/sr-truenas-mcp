@@ -75,29 +75,34 @@ describe("Registry safety enforcement", () => {
   });
 
   describe("Tier 1 — Confirm + Reason", () => {
-    it("rejects without confirm", async () => {
+    it("returns warning without confirm", async () => {
       const result = await registry.execute("storage", "pool_export", { pool_id: 1 });
-      expect(result).toHaveProperty("error");
-      expect((result as { error: string }).error).toContain("tier 1");
+      expect(result).toHaveProperty("content");
+      const text = (result as { content: Array<{ text: string }> }).content[0].text;
+      expect(text).toContain("HIGH-RISK");
+      expect(text).toContain("pool_export");
+      expect(text).toContain("confirm: true");
     });
 
-    it("rejects with confirm but no reason", async () => {
+    it("returns warning with confirm but no reason", async () => {
       const result = await registry.execute("storage", "pool_export", {
         pool_id: 1,
         confirm: true,
       });
-      expect(result).toHaveProperty("error");
-      expect((result as { error: string }).error).toContain("reason");
+      expect(result).toHaveProperty("content");
+      const text = (result as { content: Array<{ text: string }> }).content[0].text;
+      expect(text).toContain("REASON REQUIRED");
     });
 
-    it("rejects with confirm and empty reason", async () => {
+    it("returns warning with confirm and empty reason", async () => {
       const result = await registry.execute("storage", "pool_export", {
         pool_id: 1,
         confirm: true,
         reason: "   ",
       });
-      expect(result).toHaveProperty("error");
-      expect((result as { error: string }).error).toContain("reason");
+      expect(result).toHaveProperty("content");
+      const text = (result as { content: Array<{ text: string }> }).content[0].text;
+      expect(text).toContain("REASON REQUIRED");
     });
 
     it("accepts with confirm and reason", async () => {
@@ -111,12 +116,15 @@ describe("Registry safety enforcement", () => {
   });
 
   describe("Tier 2 — Confirm", () => {
-    it("rejects without confirm", async () => {
+    it("returns warning without confirm", async () => {
       const result = await registry.execute("system", "service_stop", {
         service: "ssh",
       });
-      expect(result).toHaveProperty("error");
-      expect((result as { error: string }).error).toContain("tier 2");
+      expect(result).toHaveProperty("content");
+      const text = (result as { content: Array<{ text: string }> }).content[0].text;
+      expect(text).toContain("DESTRUCTIVE");
+      expect(text).toContain("service_stop");
+      expect(text).toContain("confirm: true");
     });
 
     it("accepts with confirm", async () => {

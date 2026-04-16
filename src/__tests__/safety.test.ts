@@ -106,7 +106,7 @@ describe("Safety tier map", () => {
     const tier2 = Object.entries(ACTION_TIERS)
       .filter(([, tier]) => tier === SafetyTier.Confirm);
     expect(tier2.length).toBeGreaterThanOrEqual(60);
-    expect(tier2.length).toBeLessThanOrEqual(80);
+    expect(tier2.length).toBeLessThanOrEqual(90);
   });
 
   it("tier map has 278 total entries (all actions classified)", () => {

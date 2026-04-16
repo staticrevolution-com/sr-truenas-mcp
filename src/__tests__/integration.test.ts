@@ -56,16 +56,18 @@ describe("Integration", () => {
   });
 
   describe("Tier enforcement through full pipeline", () => {
-    it("tier 1 action rejects without confirm + reason", async () => {
+    it("tier 1 action returns warning without confirm + reason", async () => {
       const result = await registry.execute("storage", "dataset_delete", { id: "tank/test" });
-      expect(result).toHaveProperty("error");
-      expect((result as { error: string }).error).toContain("tier 1");
+      expect(result).toHaveProperty("content");
+      const text = (result as { content: Array<{ text: string }> }).content[0].text;
+      expect(text).toContain("HIGH-RISK");
     });
 
-    it("tier 2 action rejects without confirm", async () => {
+    it("tier 2 action returns warning without confirm", async () => {
       const result = await registry.execute("system", "service_stop", { service: "ssh" });
-      expect(result).toHaveProperty("error");
-      expect((result as { error: string }).error).toContain("tier 2");
+      expect(result).toHaveProperty("content");
+      const text = (result as { content: Array<{ text: string }> }).content[0].text;
+      expect(text).toContain("DESTRUCTIVE");
     });
 
     it("tier 3 action discovery works", () => {
