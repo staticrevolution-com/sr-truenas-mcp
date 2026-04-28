@@ -134,4 +134,75 @@ describe("Integration", () => {
       }
     });
   });
+
+  describe("Dataset-name validation through handlers", () => {
+    it("dataset_create rejects names with traversal", async () => {
+      // Tier 3 (open): handler runs immediately. Validation MUST throw before
+      // client.call("pool.dataset.create"); the stub client would otherwise
+      // attempt a network round-trip and fail differently.
+      await expect(
+        registry.execute("storage", "dataset_create", { name: "tank/../other" }),
+      ).rejects.toThrow("..");
+    });
+
+    it("dataset_create rejects names with disallowed characters", async () => {
+      await expect(
+        registry.execute("storage", "dataset_create", { name: "tank/data; rm -rf" }),
+      ).rejects.toThrow("alphanumerics");
+    });
+
+    it("dataset_create rejects names with null bytes", async () => {
+      await expect(
+        registry.execute("storage", "dataset_create", { name: "tank/data\0evil" }),
+      ).rejects.toThrow("null bytes");
+    });
+
+    it("dataset_create routes /mnt/-prefixed names through path validator", async () => {
+      // /mnt/-prefixed → strict validateTrueNASPath. Traversal must be caught.
+      await expect(
+        registry.execute("storage", "dataset_create", { name: "/mnt/tank/../etc" }),
+      ).rejects.toThrow("..");
+    });
+
+    it("replication_create rejects bad source_datasets entries", async () => {
+      // Tier 2 (confirm): need confirm:true for the handler to execute at all.
+      await expect(
+        registry.execute("data_protection", "replication_create", {
+          confirm: true,
+          name: "test",
+          direction: "PUSH",
+          transport: "LOCAL",
+          source_datasets: ["tank/good", "tank/../evil"],
+          target_dataset: "backup/data",
+        }),
+      ).rejects.toThrow("..");
+    });
+
+    it("replication_create rejects bad target_dataset", async () => {
+      await expect(
+        registry.execute("data_protection", "replication_create", {
+          confirm: true,
+          name: "test",
+          direction: "PUSH",
+          transport: "LOCAL",
+          source_datasets: ["tank/good"],
+          target_dataset: "backup/../etc",
+        }),
+      ).rejects.toThrow("..");
+    });
+
+    it("replication_create without confirm returns tier-2 warning, never validates", async () => {
+      // Defense-in-depth check: even with traversal, the registry's confirm
+      // gate fires first and returns the warning content. No throw.
+      const result = await registry.execute("data_protection", "replication_create", {
+        name: "test",
+        direction: "PUSH",
+        transport: "LOCAL",
+        source_datasets: ["tank/../evil"],
+        target_dataset: "backup/data",
+      });
+      const text = (result as { content: Array<{ text: string }> }).content[0].text;
+      expect(text).toContain("DESTRUCTIVE");
+    });
+  });
 });

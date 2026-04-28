@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
-import { validateTrueNASPath } from "../validation.js";
+import { validateDatasetName, validateTrueNASPath } from "../validation.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -82,6 +82,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
       enabled: z.boolean().optional().describe("Enable this task"),
     },
     async (params) => {
+      for (const ds of params.source_datasets) validateDatasetName(ds);
+      validateDatasetName(params.target_dataset);
       const result = await client.call("replication.create", [clean(params)]);
       return jsonContent(result);
     },

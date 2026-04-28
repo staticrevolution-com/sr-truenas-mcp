@@ -37,7 +37,7 @@ Single MCP tool (`truenas`) with hierarchical discovery: 270 active actions acro
 - Fail-closed: unclassified actions rejected at registration
 - Runtime Zod validation wraps every handler
 - Response filtering (layered matcher: 57 exact keys + 9 suffix patterns + 15-entry NEVER_REDACT allowlist; see `src/filters.ts`) on all returns
-- Path validation on most filesystem-touching handlers (3 known gaps closing in v1.0.1 A2: `pool.dataset.create`, `sharing.smb.create`, `sharing.nfs.create`)
+- Path validation on every filesystem-touching handler (`validateTrueNASPath` enforces `/mnt/` prefix, no `..`, no null bytes) and dataset-name validation on every ZFS-side handler (`validateDatasetName`: charset `[a-zA-Z0-9._:/-]`, max 255, no `..`, no null bytes)
 
 ### Key Files
 
@@ -47,7 +47,7 @@ Single MCP tool (`truenas`) with hierarchical discovery: 270 active actions acro
 | `src/registry.ts` | Tool registry, categorization, centralized safety enforcement |
 | `src/client.ts` | WebSocket JSON-RPC 2.0 client (DDP handshake, multiplexing, reconnect) |
 | `src/safety.ts` | Tier classification map (pure data, every action -> tier) |
-| `src/validation.ts` | Path validation (`/mnt/` prefix, no traversal) |
+| `src/validation.ts` | Path validation (`/mnt/` prefix, no traversal) + dataset-name validation (`validateDatasetName`) |
 | `src/filters.ts` | Response filtering (layered: 57 exact + 9 suffix + 15 allowlist) |
 | `src/tools/*.ts` | 8 tool modules registering handlers |
 | `src/tools/index.ts` | `buildRegistry()` wiring |
@@ -90,9 +90,12 @@ The LLM receives the warning as a normal tool response, presents it to the user,
 
 All handler and resource responses pass through `filterSensitiveFields()`, a 3-tier matcher: 57 exact keys (e.g. `password`, `privatekey`, `unixhash`, `salt`, `bindpw`, `recovery_codes`), 9 suffix patterns (`_password$`, `_token$`, `_secret$`, `_passphrase$`, `_seed$`, `_private_key$`, `_credentials$`, `_pin$`, `_passwd$`), and a 15-entry `NEVER_REDACT` allowlist that preserves benign `*_key` identifiers (`id_key`, `pool_key`, `vdev_key`, `device_key`), password-policy descriptors (`password_disabled`, `last_password_change`, `ssh_password_enabled`, …), and public-key material (`public_key`, `sshpubkey`, `authorized_keys`). Allowlist wins over both exact and suffix.
 
-### Path Validation
+### Path & Dataset-Name Validation
 
-Filesystem-touching handlers across `src/tools/filesystem.ts`, `sharing.ts`, `replication.ts`, and `network.ts` validate paths via `validateTrueNASPath()`: must start with `/mnt/`, no `..`, no null bytes. **Three known coverage gaps** (`pool.dataset.create`, `sharing.smb.create`, `sharing.nfs.create`) close in PLAN.md A2.
+Two validators in `src/validation.ts`:
+
+- **`validateTrueNASPath(path)`** — for filesystem paths. Must start with `/mnt/`, no `..`, no null bytes. Used by every filesystem-touching handler in `filesystem.ts`, `sharing.ts` (smb/nfs share `path`, iscsi extent file `path`), `replication.ts` (cloudsync/cloud_backup/rsync `path`), and `network.ts`.
+- **`validateDatasetName(name)`** — for ZFS dataset names (e.g. `tank/data`). Charset `[a-zA-Z0-9._:/-]`, max 255 chars, no `..`, no null bytes. Used by `dataset_create` (in `storage.ts`) and `replication_create` (`source_datasets[]` + `target_dataset`). `dataset_create` additionally routes `/mnt/`-prefixed input through `validateTrueNASPath` for defense in depth.
 
 ## WebSocket Protocol
 

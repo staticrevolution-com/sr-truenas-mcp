@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
+import { validateDatasetName, validateTrueNASPath } from "../validation.js";
 
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
@@ -306,6 +307,14 @@ export function register(server: McpServer, client: TrueNASClient): void {
       inherit_encryption: z.boolean().optional().describe("Inherit encryption from parent"),
     },
     async (params) => {
+      // Defense in depth: an LLM may pass a /mnt/-prefixed path by mistake.
+      // Route those through the strict path validator; everything else is a
+      // bare ZFS dataset name (e.g. "tank/data").
+      if (params.name.startsWith("/mnt/")) {
+        validateTrueNASPath(params.name);
+      } else {
+        validateDatasetName(params.name);
+      }
       const body: Record<string, unknown> = { name: params.name };
       const optionalFields = [
         "type", "volsize", "compression", "atime", "dedup", "quota", "refquota",

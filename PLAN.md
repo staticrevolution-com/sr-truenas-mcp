@@ -9,7 +9,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | ID | Item | Status | Notes |
 |---|---|---|---|
 | A1 | Hybrid response filter (exact + suffix + allowlist) | ✅ done | `src/filters.ts` — 57 exact + 9 suffix + 15 allowlist |
-| A2 | Path validation gaps + `validateDatasetName` | ⬜ pending | dataset_create, smb/nfs share create, replication |
+| A2 | Path validation gaps + `validateDatasetName` | ✅ done | dataset_create + replication_create. (Audit was stale on smb/nfs — those already validated.) |
 | A3 | Schema tightening (high-risk methods) | ⬜ pending | system.general.update is highest priority |
 | A4a/b | WebSocket settle-once + send-error fix | ⬜ pending | `src/client.ts` race fixes |
 | A4c | Reconnect cleanup preserves idempotent callers | ⬜ pending | Idempotency hint plumbing |
