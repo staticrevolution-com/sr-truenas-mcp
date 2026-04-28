@@ -48,6 +48,8 @@ interface PendingRequest {
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
   settled: boolean;
+  method: string;
+  idempotent: boolean;
 }
 
 /**
@@ -61,6 +63,30 @@ export class WebSocketSendError extends Error {
     super(`Failed to send request: ${message}`);
     this.name = "WebSocketSendError";
   }
+}
+
+/**
+ * Thrown when a non-idempotent request was in flight (or about to retry)
+ * across a connection drop. The server may or may not have processed
+ * the original send, so retrying could double-create / double-mutate.
+ * Callers must decide whether to manually retry.
+ */
+export class ReconnectAborted extends Error {
+  constructor(method: string) {
+    super(`Connection lost during non-idempotent call '${method}'; not retrying to avoid duplicate side effects`);
+    this.name = "ReconnectAborted";
+  }
+}
+
+/**
+ * Method names that are safe to retry across a transparent reconnect.
+ * Read-only queries and the job-poll endpoint. Anything else is treated
+ * as potentially-side-effectful and surfaces ReconnectAborted instead.
+ */
+const IDEMPOTENT_METHOD_RE = /(\.query|\.get_instance|\.config)$|^core\.get_jobs$/;
+
+function inferIdempotent(method: string): boolean {
+  return IDEMPOTENT_METHOD_RE.test(method);
 }
 
 export class TrueNASClient {
@@ -213,24 +239,40 @@ export class TrueNASClient {
   /**
    * Call a TrueNAS WebSocket API method.
    * Automatically connects if not already connected.
+   *
+   * @param idempotent  Override the inferred idempotency hint. When the
+   *                    underlying ws drops and reconnect succeeds, only
+   *                    idempotent calls are auto-retried; non-idempotent
+   *                    calls reject with `ReconnectAborted` so callers can
+   *                    decide whether duplicate side effects are safe.
+   *                    Default: inferred from method name (`*.query`,
+   *                    `*.get_instance`, `*.config`, `core.get_jobs`).
    */
-  async call(method: string, params: unknown[] = [], timeoutMs = 30_000): Promise<unknown> {
+  async call(method: string, params: unknown[] = [], timeoutMs = 30_000, idempotent?: boolean): Promise<unknown> {
     await this.connect();
 
+    const isIdempotent = idempotent ?? inferIdempotent(method);
+
     try {
-      return await this.callRaw(method, params, timeoutMs);
+      return await this.callRaw(method, params, timeoutMs, isIdempotent);
     } catch (err) {
-      // Retry once on connection errors
-      if (isConnectionError(err)) {
+      if (!isConnectionError(err)) throw err;
+
+      // Connection dropped. Idempotent calls retry transparently; everything
+      // else surfaces ReconnectAborted so the caller can make the safety
+      // call about replaying.
+      if (!isIdempotent) {
         this.cleanup();
-        await this.connect();
-        return this.callRaw(method, params, timeoutMs);
+        throw new ReconnectAborted(method);
       }
-      throw err;
+
+      this.cleanup();
+      await this.connect();
+      return this.callRaw(method, params, timeoutMs, isIdempotent);
     }
   }
 
-  private callRaw(method: string, params: unknown[], timeoutMs = 30_000): Promise<unknown> {
+  private callRaw(method: string, params: unknown[], timeoutMs = 30_000, idempotent = false): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
         reject(new Error("WebSocket not connected"));
@@ -243,7 +285,7 @@ export class TrueNASClient {
         this.settlePending(id, "reject", new Error(`Request timed out after ${timeoutMs}ms: ${method}`));
       }, timeoutMs);
 
-      this.pending.set(id, { resolve, reject, timer, settled: false });
+      this.pending.set(id, { resolve, reject, timer, settled: false, method, idempotent });
 
       const request: DDPRequest = { id, msg: "method", method, params };
       const payload = JSON.stringify(request);

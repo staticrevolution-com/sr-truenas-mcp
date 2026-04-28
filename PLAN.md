@@ -12,7 +12,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | A2 | Path validation gaps + `validateDatasetName` | ✅ done | dataset_create + replication_create. (Audit was stale on smb/nfs — those already validated.) |
 | A3 | Schema tightening (high-risk methods) | ✅ done | pool/dataset/replication/vm/network/sharing/system tightened; system_general_update unknown-key allowlist enforced at handler |
 | A4a/b | WebSocket settle-once + send-error fix | ✅ done | `src/client.ts` — `settled` flag + `settlePending()` helper + `WebSocketSendError` + sync-throw try/catch |
-| A4c | Reconnect cleanup preserves idempotent callers | ⬜ pending | Idempotency hint plumbing |
+| A4c | Reconnect cleanup preserves idempotent callers | ✅ done | `client.call()` honours idempotency: query/get_instance/config/core.get_jobs auto-retry; everything else throws `ReconnectAborted`. Replay-queue state machine deferred — overkill for stateless-gateway mode. |
 | A4d | Job polling: backoff + ws-state aware | ⬜ pending | `waitForJob` rewrite |
 | A5 | Test/doc accuracy + `audit:counts` script | ⬜ pending | Dynamic count assertion |
 | A6 | Resources fan-out: `Promise.allSettled` | ⬜ pending | `src/resources.ts` |

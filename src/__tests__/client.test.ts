@@ -44,7 +44,7 @@ vi.mock("ws", () => ({
 }));
 
 // Import after mock is set up
-const { TrueNASClient, WebSocketSendError } = await import("../client.js");
+const { TrueNASClient, WebSocketSendError, ReconnectAborted } = await import("../client.js");
 
 describe("TrueNASClient WebSocket", () => {
   let client: InstanceType<typeof TrueNASClient>;
@@ -278,6 +278,70 @@ describe("TrueNASClient WebSocket", () => {
       // Server response after close (same id): handler routes through
       // settlePending which no-ops. No throw, no double settle.
       expect(() => mockWs.serverSend({ id: callMsg.id, msg: "result", result: "late" })).not.toThrow();
+    });
+  });
+
+  describe("reconnect idempotency (A4c)", () => {
+    it("retries idempotent call (pool.query) transparently after a connection drop", async () => {
+      await client.connect();
+
+      const callPromise = client.call("pool.query", []);
+      await new Promise((r) => setTimeout(r, 10));
+
+      mockWs.emit("close");
+
+      await new Promise((r) => setTimeout(r, 100));
+      // After reconnect, mockWs is reassigned by the send-interceptor on every
+      // send. The new ws contains: handshake + auth + the retried pool.query.
+      const sent = mockWs.sentMessages.map((s) => JSON.parse(s));
+      const retried = [...sent].reverse().find((m) => m.method === "pool.query");
+      expect(retried, `expected pool.query retry; got ${JSON.stringify(sent.map(s => s.method ?? "(handshake)"))}`).toBeDefined();
+      mockWs.serverSend({ id: retried!.id, msg: "result", result: [{ name: "tank" }] });
+
+      expect(await callPromise).toEqual([{ name: "tank" }]);
+    });
+
+    it("rejects non-idempotent call (pool.create) with ReconnectAborted on connection drop", async () => {
+      await client.connect();
+
+      const callPromise = client.call("pool.create", [{ name: "tank" }]);
+      await new Promise((r) => setTimeout(r, 10));
+
+      mockWs.emit("close");
+
+      await expect(callPromise).rejects.toBeInstanceOf(ReconnectAborted);
+      await expect(callPromise).rejects.toThrow("pool.create");
+    });
+
+    it("explicit idempotent=true overrides inference for non-matching method names", async () => {
+      await client.connect();
+
+      // pool.create is not in the idempotent regex, but the caller asserts
+      // it is safe to retry (e.g. dry-run mode in a future iteration). The
+      // override must be honored: connection drop → retry, not abort.
+      const callPromise = client.call("pool.create", [{ name: "tank" }], 30_000, true);
+      await new Promise((r) => setTimeout(r, 10));
+
+      mockWs.emit("close");
+
+      await new Promise((r) => setTimeout(r, 100));
+      const sent = mockWs.sentMessages.map((s) => JSON.parse(s));
+      const retried = [...sent].reverse().find((m) => m.method === "pool.create");
+      expect(retried, `expected pool.create retry; got ${JSON.stringify(sent.map(s => s.method ?? "(handshake)"))}`).toBeDefined();
+      mockWs.serverSend({ id: retried!.id, msg: "result", result: { id: 1, name: "tank" } });
+
+      expect(await callPromise).toEqual({ id: 1, name: "tank" });
+    });
+
+    it("explicit idempotent=false overrides inference for query methods", async () => {
+      await client.connect();
+
+      const callPromise = client.call("pool.query", [], 30_000, false);
+      await new Promise((r) => setTimeout(r, 10));
+
+      mockWs.emit("close");
+
+      await expect(callPromise).rejects.toBeInstanceOf(ReconnectAborted);
     });
   });
 
