@@ -26,7 +26,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | B5 | Pre-flight health check (optional) | ⬜ pending | Phase B |
 | B6 | `npm audit` cleanup pass | ⬜ pending | Phase B |
 | B7 | Filter doc-sync drift gate | ⬜ pending | Phase B |
-| B8 | Authenticate agentgateway init's GitHub-release fetch | ⬜ pending | Repo is private; busybox `wget` in `truenas-mcp-init` 404s anonymously. Surfaced during A8. Disaster-recovery path (both `/tmp` and `/bin-vol` cache empty) currently fails. Options: GitHub PAT in stack env + `wget --header "Authorization: Bearer ..."`, or mirror the binary somewhere unauthenticated, or bake binary into the combined image. |
+| B8 | Bake sr-truenas-mcp into the combined agentgateway image | ⬜ pending | **Detailed scope below: see §B8.** Surfaced during A8: repo is private, `truenas-mcp-init`'s anonymous `wget` 404s, disaster-recovery path is broken. Lean is option 3 (image bake) — eliminates the runtime fetch and the sidecar; mirrors the existing `agentgateway-src` and Bitwarden-mcp patterns. Stays even if we make the repo public later. |
 
 Update this table as items land. ⬜ = pending, ▶ = in progress, ✅ = done, ⏭ = skipped, 🚧 = blocked.
 
@@ -368,6 +368,161 @@ Add `src/__tests__/filter-doc-sync.test.ts` that:
 - Asserts they match.
 
 Same idea for "X path-validating handlers" claim — count `validateTrueNASPath`/`validateDatasetName` call sites and assert match. Drift becomes a CI failure.
+
+### B8 — Bake sr-truenas-mcp into the combined agentgateway image
+
+**Repo affected**: `staticrevolution-com/sr-agentgateway` (this is *not* a `sr-truenas-mcp` source change). Captured here because the gap was surfaced during A8 verification of this project's release flow.
+
+#### Why option 3 over the alternatives
+
+| | Pros | Cons |
+|---|---|---|
+| 1. PAT in stack env, authenticated `wget` | Smallest delta. Sidecar architecture preserved. | Still a runtime download — image is fine but the gateway can't start if GitHub is unreachable. Adds a credential to manage and rotate. |
+| 2. Mirror the binary on internal HTTP | No new credential. | Adds infra (a host serving the file), and a release-time copy step. Failure mode shifts but doesn't shrink. |
+| **3. Bake into combined image** | **No runtime download. Sidecar disappears. Mirrors the existing `cr.agentgateway.dev/agentgateway:vX.Y.Z` stage and `npm install -g @bitwarden/mcp-server` pattern. Image-pull failure is the only failure mode and it's already observable via Portainer.** | Couples agentgateway image rebuilds to truenas-mcp tagged releases (need a 2-line Dockerfile bump per release). Loses the `/tmp` "swap a fresh build in without a release" dev shortcut. |
+
+The repo going public later doesn't change the math — option 3 still wins on simplicity and on eliminating the runtime fetch.
+
+#### Concrete edits (single PR against `staticrevolution-com/sr-agentgateway`)
+
+**1. `Dockerfile`** — add a fetch stage and a copy. Mirrors the existing `agentgateway-src` stage:
+
+```dockerfile
+FROM cr.agentgateway.dev/agentgateway:v1.1.0 AS agentgateway-src
+
+# New: pull sr-truenas-mcp release tarball, extract binary
+ARG TRUENAS_MCP_VERSION=v1.0.1
+FROM curlimages/curl:8.11.0 AS truenas-mcp-src
+ARG TRUENAS_MCP_VERSION
+RUN --mount=type=secret,id=gh_token,required=true \
+    GH_TOKEN="$(cat /run/secrets/gh_token)" \
+ && curl -fsSL \
+      -H "Authorization: Bearer ${GH_TOKEN}" \
+      -H "Accept: application/octet-stream" \
+      "https://api.github.com/repos/staticrevolution-com/sr-truenas-mcp/releases/tags/${TRUENAS_MCP_VERSION}" \
+    | sh -c 'jq -r ".assets[] | select(.name == \"sr-truenas-mcp-linux-x64.tar.gz\") | .url"' \
+    | xargs -I {} curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/octet-stream" -o /tmp/truenas-mcp.tar.gz {} \
+ && tar xzf /tmp/truenas-mcp.tar.gz -C /tmp \
+ && /tmp/sr-truenas-mcp --version
+
+FROM node:24-trixie-slim
+RUN npm install -g \
+      @bitwarden/mcp-server@2026.2.0 \
+      @bitwarden/cli@2026.2.0 \
+ && npm cache clean --force
+COPY --from=agentgateway-src /app/agentgateway /app/agentgateway
+COPY --from=truenas-mcp-src /tmp/sr-truenas-mcp /usr/local/bin/sr-truenas-mcp
+ENV NODE_ENV=production
+ENTRYPOINT ["/app/agentgateway"]
+CMD ["-f", "/config.yaml"]
+```
+
+Notes on path choice: **bake to `/usr/local/bin/sr-truenas-mcp`, not `/opt/mcp-bin/`.** The compose still bind-mounts `/mnt/data-pool/apps/agentgateway/bin:/opt/mcp-bin:ro` for portainer-mcp, and that mount shadows whatever the image had at `/opt/mcp-bin`. A different path keeps both binaries reachable. The `--version` line in the fetch stage is a build-time smoke that fails the build if the binary is broken.
+
+The exact `curl | jq | curl` sequence above is the GitHub API path that works with private repos via fine-grained PAT. Cleaner alternative: `gh release download` inside the build stage (requires installing `gh` first). Pick whichever is simpler in review.
+
+**2. `.github/workflows/build.yaml`** — add the BuildKit secret. Two changes:
+
+```yaml
+- uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+  with:
+    context: .
+    file: Dockerfile
+    push: true
+    secrets: |
+      gh_token=${{ secrets.TRUENAS_MCP_RELEASE_TOKEN }}
+    build-args: |
+      TRUENAS_MCP_VERSION=v1.0.1
+    tags: |
+      ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+      ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+    cache-from: type=gha
+    cache-to: type=gha,mode=max
+```
+
+Rotating versions: bump the `TRUENAS_MCP_VERSION` build-arg in this workflow (one-line PR). For a future ergonomics improvement, add a `repository_dispatch` listener so a `sr-truenas-mcp` release fires a build here automatically — out of scope for B8.
+
+**3. `docker-compose.yaml`** — drop the sidecar and the env var:
+
+```diff
+   agentgateway:
+     image: ghcr.io/staticrevolution-com/sr-agentgateway-combined:latest
+     ...
+     depends_on:
+       portainer-mcp-init:
+         condition: service_completed_successfully
+-      truenas-mcp-init:
+-        condition: service_completed_successfully
+
+-  # Installs sr-truenas-mcp binary to shared volume
+-  # Sources: existing binary > host /tmp > GitHub release download
+-  truenas-mcp-init:
+-    image: busybox:1.37
+-    container_name: sr-agentgateway-truenas-init
+-    command:
+-      - sh
+-      - -c
+-      - |
+-        ...
+-    environment:
+-      - TRUENAS_MCP_VERSION=${TRUENAS_MCP_VERSION:-v1.0.1}
+-    volumes:
+-      - /mnt/data-pool/apps/agentgateway/bin:/bin-vol
+-      - /tmp:/host-tmp:ro
+-    restart: "no"
+```
+
+The `/mnt/data-pool/apps/agentgateway/bin:/opt/mcp-bin:ro` volume on the agentgateway service stays as-is (still serves portainer-mcp).
+
+**4. `config.yaml`** — change the `truenas` backend `cmd` path:
+
+```diff
+       - name: truenas
+         stdio:
+-          cmd: /opt/mcp-bin/sr-truenas-mcp
++          cmd: /usr/local/bin/sr-truenas-mcp
+```
+
+#### Repo-level setup (one-time, before merging the PR)
+
+1. **Create a fine-grained PAT** with `Contents: Read` scoped to `staticrevolution-com/sr-truenas-mcp` only. No other scopes. Owner: a service identity if available, otherwise the user.
+2. **Add it to `staticrevolution-com/sr-agentgateway` repo secrets** as `TRUENAS_MCP_RELEASE_TOKEN`.
+3. **Set an expiry reminder** for the PAT — fine-grained PATs have a max 1-year lifetime. Track in calendar / a B-row in PLAN.md if we add one for credential rotation.
+4. **Verify Portainer stack 1183 has no `TRUENAS_MCP_VERSION` stack-level env var** that would interfere. (The compose default goes away with this PR; if Portainer has it set explicitly, that value would be passed to a service that no longer reads it, which is harmless but confusing.) Inspect via Portainer API and clean up if present.
+
+#### Rollout sequencing
+
+1. Repo-level setup above.
+2. Open PR with the four file changes. CI build will fail without the secret/PAT — that's the intended forcing function.
+3. After CI green: merge to `main`.
+4. `build.yaml` workflow rebuilds `ghcr.io/...sr-agentgateway-combined:latest`. Verify in CI logs that the build-time `--version` smoke prints the expected `1.0.1+<sha>`.
+5. Portainer redeploy stack 1183 with `pullImage: true`. The agentgateway service comes up with the baked binary at `/usr/local/bin/sr-truenas-mcp`; the `truenas-mcp-init` service is gone (Portainer's `pullImage`-with-removed-service path may leave an orphan container — see `portainer-safety.md` note about manually removing orphans via dockerProxy `DELETE /containers/<orphan>` after compose-level service removal).
+6. Verify via Portainer dockerProxy exec: `sh -c "/usr/local/bin/sr-truenas-mcp --version; ls -la /opt/mcp-bin/"`. Expect `1.0.1+<sha>` and `portainer-mcp` only in `/opt/mcp-bin`.
+7. Optional cleanup: `rm /mnt/data-pool/apps/agentgateway/bin/sr-truenas-mcp` on the host. The volume becomes a portainer-mcp-only directory. **This step needs explicit per-incident SSH authorization** (see `production-safety.md` and `authorization-scope.md`).
+
+#### Verification
+
+- Image build CI logs show `--version` printing `1.0.1+<sha>` from inside the fetch stage.
+- Image SHA in `ghcr.io/...sr-agentgateway-combined:latest` updated; previous SHA available as the per-commit tag for rollback.
+- Post-deploy: agentgateway container running, `/usr/local/bin/sr-truenas-mcp --version` returns expected stamp, MCP truenas tool calls succeed.
+- `truenas-mcp-init` container absent from `docker ps -a` (or removed manually as orphan if Portainer left it).
+- Stack restart cycle works without `/tmp/sr-truenas-mcp` and without `/bin-vol/sr-truenas-mcp`.
+
+#### Rollback
+
+The previous `sr-agentgateway-combined:<old-sha>` image is still on ghcr.io. Portainer redeploy with the image tag pinned to the previous commit SHA reverts. The compose stays the same (the truenas-mcp-init service is gone in both old and new compose); the only thing changing is which image the agentgateway service pulls. Old image still has `/opt/mcp-bin/sr-truenas-mcp` resolution intact via the volume mount, but if `/bin-vol` is empty, rollback would still need a binary in place. Document this caveat — recommend keeping a known-good `/bin-vol/sr-truenas-mcp` until B8 has soaked.
+
+#### What this does NOT do (scope discipline)
+
+- **Does not bake `portainer-mcp`.** Same fix applies and is worth doing — track as **B8b** (or fold into the same PR if the user wants). For now, portainer-mcp continues to use the busybox init + shared volume.
+- **Does not change `sr-truenas-mcp` source code or release process.** The `sr-truenas-mcp` GitHub release workflow stays exactly as it is. B8 only consumes those releases differently.
+- **Does not add release-event automation across repos.** A truenas-mcp release does NOT auto-trigger a sr-agentgateway image rebuild; the version bump is a manual one-line PR. That's a deliberate choice — small coordination cost, large reduction in moving parts.
+
+#### Open decisions for the user before implementation
+
+1. PAT lifetime — 90 days, 6 months, 1 year? (Trade rotation friction against blast radius if the PAT leaks.)
+2. Should B8 fold in B8b (bake portainer-mcp at the same time)? Same Dockerfile pattern, same kind of secret; doubles the test surface but eliminates the bin volume entirely.
+3. After B8 ships, do we keep `/tmp/sr-truenas-mcp` as a documented dev override path (manual restore + restart)? Or is the "tagged release every time" discipline enough?
 
 ---
 
