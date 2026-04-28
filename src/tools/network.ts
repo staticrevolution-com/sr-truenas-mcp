@@ -35,7 +35,14 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Create a new network interface (VLAN, bridge, or bond/LAGG). Network changes are staged until committed with network_commit_changes.",
     {
       type: z.enum(["BRIDGE", "LINK_AGGREGATION", "VLAN"]).describe("Type of interface to create"),
-      name: z.string().optional().describe("Interface name"),
+      name: z
+        .string()
+        .regex(
+          /^[a-z0-9]+([-._][a-z0-9]+)*$/,
+          "Interface name must be lowercase alphanumerics, optionally separated by '-', '.', or '_'",
+        )
+        .optional()
+        .describe("Interface name"),
       ipv4_dhcp: z.boolean().optional().describe("Enable IPv4 DHCP"),
       ipv6_auto: z.boolean().optional().describe("Enable IPv6 auto-configuration"),
       aliases: z
@@ -637,7 +644,11 @@ export function register(server: McpServer, client: TrueNASClient): void {
     {
       id: z.string().describe("Disk identifier, e.g. 'sda'"),
       dev_name: z.string().describe("Device name to wipe, e.g. 'sda'"),
-      mode: z.enum(["QUICK", "FULL"]).describe("Wipe mode: QUICK erases partitions, FULL overwrites entire disk"),
+      mode: z
+        .enum(["QUICK", "FULL", "FULL_RANDOM"])
+        .describe(
+          "Wipe mode: QUICK erases partitions, FULL overwrites with zeros, FULL_RANDOM with random data",
+        ),
       synccache: z.boolean().optional().default(true).describe("Sync cache after wipe"),
       confirm: z.boolean().describe("Must be true to confirm wipe"),
     },

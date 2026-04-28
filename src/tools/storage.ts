@@ -3,6 +3,20 @@ import { z } from "zod";
 import { TrueNASClient } from "../client.js";
 import { validateDatasetName, validateTrueNASPath } from "../validation.js";
 
+// Union of all VDEV types accepted by pool.create across roles. TrueNAS
+// rejects illegal type/role combinations server-side (e.g. RAIDZ in a log
+// vdev); this enum's job is just to catch typos at the client boundary.
+const vdevType = z.enum([
+  "STRIPE",
+  "MIRROR",
+  "RAIDZ1",
+  "RAIDZ2",
+  "RAIDZ3",
+  "DRAID1",
+  "DRAID2",
+  "DRAID3",
+]);
+
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
   // POOLS
@@ -27,19 +41,27 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "pool_create",
     "Create a new storage pool (destructive operation — requires confirm)",
     {
-      name: z.string().describe("Pool name"),
+      name: z
+        .string()
+        .min(1)
+        .max(255)
+        .regex(
+          /^[a-zA-Z][a-zA-Z0-9._-]*$/,
+          "Pool name must start with a letter and contain only letters, digits, '.', '_', '-'",
+        )
+        .describe("Pool name"),
       topology: z
         .object({
           data: z.array(
             z.object({
-              type: z.string().describe("VDEV type: STRIPE, MIRROR, RAIDZ1, RAIDZ2, RAIDZ3"),
+              type: vdevType.describe("VDEV type"),
               disks: z.array(z.string()).describe("List of disk identifiers"),
             }),
           ),
           log: z
             .array(
               z.object({
-                type: z.string(),
+                type: vdevType,
                 disks: z.array(z.string()),
               }),
             )
@@ -48,7 +70,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           cache: z
             .array(
               z.object({
-                type: z.string(),
+                type: vdevType,
                 disks: z.array(z.string()),
               }),
             )
@@ -57,7 +79,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           spare: z
             .array(
               z.object({
-                type: z.string(),
+                type: vdevType,
                 disks: z.array(z.string()),
               }),
             )
@@ -66,7 +88,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           special: z
             .array(
               z.object({
-                type: z.string(),
+                type: vdevType,
                 disks: z.array(z.string()),
               }),
             )
@@ -75,7 +97,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           dedup: z
             .array(
               z.object({
-                type: z.string(),
+                type: vdevType,
                 disks: z.array(z.string()),
               }),
             )
@@ -88,8 +110,20 @@ export function register(server: McpServer, client: TrueNASClient): void {
         .object({
           generate_key: z.boolean().optional(),
           key: z.string().optional(),
-          passphrase: z.string().optional(),
-          algorithm: z.string().optional(),
+          passphrase: z
+            .string()
+            .min(8, "Encryption passphrase must be at least 8 characters")
+            .optional(),
+          algorithm: z
+            .enum([
+              "AES-128-CCM",
+              "AES-192-CCM",
+              "AES-256-CCM",
+              "AES-128-GCM",
+              "AES-192-GCM",
+              "AES-256-GCM",
+            ])
+            .optional(),
         })
         .optional()
         .describe("Encryption options"),
@@ -120,25 +154,25 @@ export function register(server: McpServer, client: TrueNASClient): void {
           data: z
             .array(
               z.object({
-                type: z.string(),
+                type: vdevType,
                 disks: z.array(z.string()),
               }),
             )
             .optional(),
           log: z
-            .array(z.object({ type: z.string(), disks: z.array(z.string()) }))
+            .array(z.object({ type: vdevType, disks: z.array(z.string()) }))
             .optional(),
           cache: z
-            .array(z.object({ type: z.string(), disks: z.array(z.string()) }))
+            .array(z.object({ type: vdevType, disks: z.array(z.string()) }))
             .optional(),
           spare: z
-            .array(z.object({ type: z.string(), disks: z.array(z.string()) }))
+            .array(z.object({ type: vdevType, disks: z.array(z.string()) }))
             .optional(),
           special: z
-            .array(z.object({ type: z.string(), disks: z.array(z.string()) }))
+            .array(z.object({ type: vdevType, disks: z.array(z.string()) }))
             .optional(),
           dedup: z
-            .array(z.object({ type: z.string(), disks: z.array(z.string()) }))
+            .array(z.object({ type: vdevType, disks: z.array(z.string()) }))
             .optional(),
         })
         .optional()
@@ -292,7 +326,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       recordsize: z.string().optional().describe("Record size (e.g. '128K')"),
       casesensitivity: z.enum(["SENSITIVE", "INSENSITIVE"]).optional().describe("Case sensitivity"),
       aclmode: z.enum(["PASSTHROUGH", "RESTRICTED", "DISCARD"]).optional().describe("ACL mode"),
-      acltype: z.enum(["OFF", "NFSV4", "POSIX"]).optional().describe("ACL type"),
+      acltype: z.enum(["OFF", "NFSV4", "POSIX", "INHERIT"]).optional().describe("ACL type"),
       share_type: z.enum(["GENERIC", "SMB"]).optional().describe("Share type"),
       encryption: z.boolean().optional().describe("Enable encryption"),
       encryption_options: z
@@ -346,7 +380,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       readonly: z.enum(["ON", "OFF"]).optional().describe("Read-only mode"),
       recordsize: z.string().optional().describe("Record size (e.g. '128K')"),
       aclmode: z.enum(["PASSTHROUGH", "RESTRICTED", "DISCARD"]).optional().describe("ACL mode"),
-      acltype: z.enum(["OFF", "NFSV4", "POSIX"]).optional().describe("ACL type"),
+      acltype: z.enum(["OFF", "NFSV4", "POSIX", "INHERIT"]).optional().describe("ACL type"),
       exec: z.enum(["ON", "OFF"]).optional().describe("Allow executing programs"),
       sync: z.enum(["STANDARD", "ALWAYS", "DISABLED"]).optional().describe("Sync writes"),
     },

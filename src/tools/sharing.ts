@@ -44,11 +44,33 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Create a new SMB share",
     {
       path: z.string().describe("Filesystem path to share"),
-      name: z.string().optional().describe("Share name (defaults to last path component)"),
+      name: z
+        .string()
+        .min(1)
+        .max(80)
+        .regex(
+          /^[a-zA-Z0-9._-]+$/,
+          "SMB share name must be alphanumerics, '_', '-', or '.'",
+        )
+        .optional()
+        .describe("Share name (defaults to last path component)"),
       comment: z.string().optional().describe("Description / comment"),
       enabled: z.boolean().optional().describe("Whether the share is enabled"),
       home: z.boolean().optional().describe("Use as home share"),
-      purpose: z.string().optional().describe("Share purpose preset"),
+      purpose: z
+        .enum([
+          "DEFAULT_SHARE",
+          "LEGACY_SHARE",
+          "TIMEMACHINE_SHARE",
+          "MULTIPROTOCOL_SHARE",
+          "TIME_LOCKED_SHARE",
+          "PRIVATE_DATASETS_SHARE",
+          "EXTERNAL_SHARE",
+          "VEEAM_REPOSITORY_SHARE",
+          "FCP_SHARE",
+        ])
+        .optional()
+        .describe("Share purpose preset (DEFAULT_SHARE recommended for general use)"),
       readonly: z.boolean().optional().describe("Read-only"),
       browsable: z.boolean().optional().describe("Visible when browsing shares"),
       guestok: z.boolean().optional().describe("Allow guest access"),
@@ -80,7 +102,20 @@ export function register(server: McpServer, client: TrueNASClient): void {
       comment: z.string().optional().describe("Description / comment"),
       enabled: z.boolean().optional().describe("Whether the share is enabled"),
       home: z.boolean().optional().describe("Use as home share"),
-      purpose: z.string().optional().describe("Share purpose preset"),
+      purpose: z
+        .enum([
+          "DEFAULT_SHARE",
+          "LEGACY_SHARE",
+          "TIMEMACHINE_SHARE",
+          "MULTIPROTOCOL_SHARE",
+          "TIME_LOCKED_SHARE",
+          "PRIVATE_DATASETS_SHARE",
+          "EXTERNAL_SHARE",
+          "VEEAM_REPOSITORY_SHARE",
+          "FCP_SHARE",
+        ])
+        .optional()
+        .describe("Share purpose preset"),
       readonly: z.boolean().optional().describe("Read-only"),
       browsable: z.boolean().optional().describe("Visible when browsing shares"),
       guestok: z.boolean().optional().describe("Allow guest access"),

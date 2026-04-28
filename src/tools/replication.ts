@@ -55,7 +55,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "replication_create",
     "Create a new replication task",
     {
-      name: z.string().describe("Replication task name"),
+      name: z.string().min(1).max(150).describe("Replication task name"),
       direction: z.enum(["PUSH", "PULL"]).describe("Replication direction"),
       transport: z.enum(["LOCAL", "SSH", "SSH+NETCAT", "LEGACY"]).describe("Transport method"),
       ssh_credentials: z.number().optional().describe("SSH credential ID (keychaincredential)"),
@@ -69,7 +69,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
       only_matching_schedule: z.boolean().optional().describe("Only replicate snapshots matching schedule"),
       retention_policy: z.enum(["SOURCE", "CUSTOM", "NONE"]).optional().describe("Snapshot retention policy"),
       lifetime_value: z.number().optional().describe("Retention lifetime value"),
-      lifetime_unit: z.string().optional().describe("Retention lifetime unit (HOUR, DAY, WEEK, MONTH, YEAR)"),
+      lifetime_unit: z
+        .enum(["HOUR", "DAY", "WEEK", "MONTH", "YEAR"])
+        .optional()
+        .describe("Retention lifetime unit"),
       naming_schema: z.array(z.string()).optional().describe("Snapshot naming schema"),
       also_include_naming_schema: z.array(z.string()).optional().describe("Additional naming schemas to include"),
       readonly: z.enum(["SET", "REQUIRE", "IGNORE"]).optional().describe("Target dataset readonly policy"),

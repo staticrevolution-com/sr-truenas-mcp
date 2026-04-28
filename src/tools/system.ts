@@ -81,29 +81,78 @@ export function register(server: McpServer, client: TrueNASClient): void {
     }
   );
 
+  // Allowlist of fields system.general.update accepts (per TrueNAS v27.0.0
+  // docs: api_methods_system.general.update.html). Any other field is
+  // rejected before reaching the API — the registry's `.passthrough()` mode
+  // defeats Zod `.strict()`, so unknown-key rejection lives at handler level.
+  const SYSTEM_GENERAL_UPDATE_FIELDS = [
+    "ds_auth",
+    "kbdmap",
+    "rollback_timeout",
+    "timezone",
+    "ui_address",
+    "ui_allowlist",
+    "ui_certificate",
+    "ui_certificate_name",
+    "ui_consolemsg",
+    "ui_httpsport",
+    "ui_httpsprotocols",
+    "ui_httpsredirect",
+    "ui_port",
+    "ui_restart_delay",
+    "ui_x_frame_options",
+    "usage_collection",
+    "wizardshown",
+  ] as const;
+  const SYSTEM_GENERAL_UPDATE_FIELD_SET = new Set<string>(SYSTEM_GENERAL_UPDATE_FIELDS);
+
   server.tool(
     "system_general_update",
-    "Update general system configuration. All fields are optional — only provide the ones you want to change. Changes to UI ports may require reconnecting on the new port.",
+    "Update general system configuration. All fields are optional — only provide the ones you want to change. Changes to UI ports may require reconnecting on the new port. Unknown fields are rejected.",
     {
-      ui_port: z.number().optional().describe("HTTP port for the web UI"),
-      ui_httpsport: z.number().optional().describe("HTTPS port for the web UI"),
-      ui_httpsredirect: z.boolean().optional().describe("Whether to redirect HTTP to HTTPS"),
-      timezone: z.string().optional().describe("System timezone, e.g. 'America/New_York'"),
-      language: z.string().optional().describe("UI language code, e.g. 'en'"),
+      ds_auth: z.boolean().optional().describe("Allow directory-service users to authenticate to the API/UI"),
       kbdmap: z.string().optional().describe("Keyboard map"),
-      crash_reporting: z.boolean().optional().describe("Enable or disable crash reporting"),
-      usage_collection: z.boolean().optional().describe("Enable or disable anonymous usage collection"),
+      rollback_timeout: z.number().int().min(1).optional().describe("UI change rollback timeout in seconds"),
+      timezone: z.string().optional().describe("System timezone, e.g. 'America/New_York'"),
+      ui_address: z.array(z.string()).optional().describe("IPv4 addresses the UI listens on"),
+      ui_allowlist: z.array(z.string()).optional().describe("CIDRs allowed to access the UI (empty = no restriction)"),
+      ui_certificate: z.number().int().nullable().optional().describe("UI HTTPS certificate ID, or null"),
+      ui_certificate_name: z.string().optional().describe("UI HTTPS certificate name"),
+      ui_consolemsg: z.boolean().optional().describe("Show system messages on the console"),
+      ui_httpsport: z.number().int().min(1).max(65535).optional().describe("HTTPS port for the web UI"),
+      ui_httpsprotocols: z
+        .array(z.enum(["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"]))
+        .optional()
+        .describe("Allowed TLS protocols for the UI"),
+      ui_httpsredirect: z.boolean().optional().describe("Whether to redirect HTTP to HTTPS"),
+      ui_port: z.number().int().min(1).max(65535).optional().describe("HTTP port for the web UI"),
+      ui_restart_delay: z.number().int().min(0).optional().describe("Delay before restarting the UI after a settings change"),
+      ui_x_frame_options: z
+        .enum(["SAMEORIGIN", "DENY", "ALLOW_ALL"])
+        .optional()
+        .describe("X-Frame-Options header for the UI"),
+      usage_collection: z.boolean().nullable().optional().describe("Enable anonymous usage collection (null = use default)"),
+      wizardshown: z.boolean().optional().describe("Whether the initial setup wizard has been shown"),
+      confirm: z.boolean().describe("Must be true (tier-2 confirm gate)"),
     },
     async (params) => {
+      // Reject any field outside the documented allowlist. Defends against an
+      // LLM passing an unsupported field name; the registry's passthrough
+      // would otherwise let it slip through to TrueNAS.
+      const unknown = Object.keys(params).filter(
+        (k) => k !== "confirm" && !SYSTEM_GENERAL_UPDATE_FIELD_SET.has(k),
+      );
+      if (unknown.length > 0) {
+        throw new Error(
+          `Unknown field(s) for system_general_update: ${unknown.join(", ")}. ` +
+            `Allowed: ${SYSTEM_GENERAL_UPDATE_FIELDS.join(", ")}`,
+        );
+      }
       const body: Record<string, unknown> = {};
-      if (params.ui_port !== undefined) body.ui_port = params.ui_port;
-      if (params.ui_httpsport !== undefined) body.ui_httpsport = params.ui_httpsport;
-      if (params.ui_httpsredirect !== undefined) body.ui_httpsredirect = params.ui_httpsredirect;
-      if (params.timezone !== undefined) body.timezone = params.timezone;
-      if (params.language !== undefined) body.language = params.language;
-      if (params.kbdmap !== undefined) body.kbdmap = params.kbdmap;
-      if (params.crash_reporting !== undefined) body.crash_reporting = params.crash_reporting;
-      if (params.usage_collection !== undefined) body.usage_collection = params.usage_collection;
+      for (const field of SYSTEM_GENERAL_UPDATE_FIELDS) {
+        const value = (params as Record<string, unknown>)[field];
+        if (value !== undefined) body[field] = value;
+      }
       const result = await client.call("system.general.update", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
