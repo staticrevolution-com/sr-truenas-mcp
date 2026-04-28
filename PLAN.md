@@ -26,7 +26,8 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | B5 | Pre-flight health check (optional) | ⬜ pending | Phase B |
 | B6 | `npm audit` cleanup pass | ⬜ pending | Phase B |
 | B7 | Filter doc-sync drift gate | ⬜ pending | Phase B |
-| B8 | Bake sr-truenas-mcp into the combined agentgateway image | ⬜ pending | **Detailed scope below: see §B8.** Surfaced during A8: repo is private, `truenas-mcp-init`'s anonymous `wget` 404s, disaster-recovery path is broken. Lean is option 3 (image bake) — eliminates the runtime fetch and the sidecar; mirrors the existing `agentgateway-src` and Bitwarden-mcp patterns. Stays even if we make the repo public later. |
+| B8 | Bake sr-truenas-mcp into the combined agentgateway image | ▶ in progress | PR open: [staticrevolution-com/sr-agentgateway#3](https://github.com/staticrevolution-com/sr-agentgateway/pull/3). Pre-merge requires `TRUENAS_MCP_RELEASE_TOKEN` secret + Portainer stack-env cleanup. Detailed scope: §B8 below. |
+| B8b | Bake portainer-mcp into the combined agentgateway image | ⬜ pending | Mirror B8 for portainer-mcp; final state drops the `/mnt/data-pool/apps/agentgateway/bin` shared volume entirely. Same Dockerfile pattern, separate PAT (or — if portainer-mcp-enhanced is a public release — no PAT). Track separately so B8 can land first and soak. |
 
 Update this table as items land. ⬜ = pending, ▶ = in progress, ✅ = done, ⏭ = skipped, 🚧 = blocked.
 
