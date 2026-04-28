@@ -132,7 +132,26 @@ Filter syntax: `[["field","op","value"]]`. Job polling: `core.get_jobs` with `[[
 
 ## Deployment
 
-### Claude Code (direct node)
+**Production runs only as a stdio child of AgentGateway** (see "AgentGateway (stdio binary)" below). The "direct node" path is a developer convenience for testing the MCP locally against a TrueNAS — not a production deployment.
+
+### AgentGateway (stdio binary) — production
+
+Binary at `/mnt/data-pool/apps/agentgateway/bin/sr-truenas-mcp`, mounted into the agentgateway container at `/opt/mcp-bin/sr-truenas-mcp`. Config target in `config.yaml`:
+```yaml
+- name: truenas
+  stdio:
+    cmd: /opt/mcp-bin/sr-truenas-mcp
+    env:
+      TRUENAS_URL: "${TRUENAS_URL}"
+      TRUENAS_API_KEY: "${TRUENAS_API_KEY}"
+      TRUENAS_VERIFY_SSL: "${TRUENAS_VERIFY_SSL}"
+```
+
+Binary install pipeline lives in `staticrevolution-com/sr-agentgateway/docker-compose.yaml` (`truenas-mcp-init`). Source priority on stack restart: host `/tmp/sr-truenas-mcp` → existing `/bin-vol` cache → GitHub release tarball pinned to `${TRUENAS_MCP_VERSION:-v1.0.0}`. The `/tmp` shortcut is the immediate-replace channel during dev; tagged releases are the canonical production version.
+
+Update binary: SCP to `/tmp/sr-truenas-mcp` on TrueNAS, redeploy stack (init copies from `/tmp`). After deploy, verify via `dockerProxy → exec sr-truenas-mcp --version` against the agentgateway container.
+
+### Claude Code (direct node) — dev only
 ```json
 {
   "mcpServers": {
@@ -148,21 +167,6 @@ Filter syntax: `[["field","op","value"]]`. Job polling: `core.get_jobs` with `[[
   }
 }
 ```
-
-### AgentGateway (stdio binary)
-
-Binary at `/mnt/data-pool/apps/agentgateway/bin/sr-truenas-mcp`. Config target in `config.yaml`:
-```yaml
-- name: truenas
-  stdio:
-    cmd: /opt/mcp-bin/sr-truenas-mcp
-    env:
-      TRUENAS_URL: "${TRUENAS_URL}"
-      TRUENAS_API_KEY: "${TRUENAS_API_KEY}"
-      TRUENAS_VERIFY_SSL: "${TRUENAS_VERIFY_SSL}"
-```
-
-Update binary: SCP to `/tmp/sr-truenas-mcp` on TrueNAS, redeploy stack (init copies from /tmp).
 
 ## Environment Variables
 

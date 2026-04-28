@@ -1,6 +1,6 @@
 {
   "name": "sr-truenas-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Hardened MCP server for TrueNAS SCALE — safety-tiered actions, WebSocket JSON-RPC 2.0, response filtering",
   "type": "module",
   "main": "dist/index.js",
