@@ -13,7 +13,7 @@ The deployed binary on TrueNAS is post-v1.0.0 master (sha256 `fa0ce982…`, mtim
 ```bash
 npm install
 npm run build          # tsc
-npm test               # vitest run (197 tests)
+npm test               # vitest run (208 tests)
 npm run type-check     # tsc --noEmit
 npm run dev            # tsc --watch
 npm run build:binary   # tsc + esbuild + pkg → dist/sr-truenas-mcp (Linux x64 binary)
@@ -176,6 +176,7 @@ Update binary: SCP to `/tmp/sr-truenas-mcp` on TrueNAS, redeploy stack (init cop
 | `TRUENAS_API_KEY` | Yes | API key from TrueNAS UI |
 | `TRUENAS_VERIFY_SSL` | No | Set `false` to skip TLS verification (warns on stderr) |
 | `TRUENAS_SKIP_PREFLIGHT` | No | Set `1` to bypass the startup health check (default: preflight runs, fails-fast on misconfig) |
+| `TRUENAS_LOG_LEVEL` | No | `error` (default) / `warn` / `info` / `debug`. Emits JSON-line structured logs to stderr. Never includes params or response bodies. |
 
 ## Known Limitations
 

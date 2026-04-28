@@ -11,11 +11,14 @@
  */
 
 import WebSocket from "ws";
+import { type Logger, noopLogger } from "./logger.js";
 
 export interface TrueNASClientConfig {
   baseUrl: string;
   apiKey: string;
   verifySsl?: boolean;
+  /** Optional structured logger — defaults to a no-op. */
+  logger?: Logger;
 }
 
 export interface JobResult {
@@ -112,6 +115,7 @@ export class TrueNASClient {
   private wsUrl: string;
   private apiKey: string;
   private verifySsl: boolean;
+  private logger: Logger;
 
   private ws: WebSocket | null = null;
   private requestId = 0;
@@ -123,6 +127,7 @@ export class TrueNASClient {
     const base = config.baseUrl.replace(/\/+$/, "");
     this.apiKey = config.apiKey;
     this.verifySsl = config.verifySsl ?? true;
+    this.logger = config.logger ?? noopLogger;
 
     // Build WebSocket URL
     this.wsUrl = toWsUrl(base);
@@ -181,9 +186,11 @@ export class TrueNASClient {
     const authResult = await this.callRaw("auth.login_with_api_key", [this.apiKey]);
     if (authResult !== true) {
       this.close();
+      this.logger.error("ws auth failed", { url: this.wsUrl });
       throw new Error("TrueNAS authentication failed — check API key");
     }
     this.authenticated = true;
+    this.logger.info("ws connected", { url: this.wsUrl });
   }
 
   private async handshake(): Promise<void> {
@@ -248,10 +255,12 @@ export class TrueNASClient {
     this.ws.on("close", () => {
       this.failAllPending(new Error("WebSocket connection closed"));
       this.authenticated = false;
+      this.logger.warn("ws closed", { pending: this.pending.size });
     });
 
     this.ws.on("error", (err) => {
       this.failAllPending(new Error(`WebSocket error: ${err.message}`));
+      this.logger.error("ws error", { error: err.message });
     });
   }
 
@@ -271,23 +280,40 @@ export class TrueNASClient {
     await this.connect();
 
     const isIdempotent = idempotent ?? inferIdempotent(method);
+    const start = Date.now();
 
     try {
-      return await this.callRaw(method, params, timeoutMs, isIdempotent);
+      const result = await this.callRaw(method, params, timeoutMs, isIdempotent);
+      this.logger.debug("rpc ok", { method, durMs: Date.now() - start });
+      return result;
     } catch (err) {
-      if (!isConnectionError(err)) throw err;
+      if (!isConnectionError(err)) {
+        this.logger.warn("rpc err", {
+          method,
+          durMs: Date.now() - start,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
 
       // Connection dropped. Idempotent calls retry transparently; everything
       // else surfaces ReconnectAborted so the caller can make the safety
       // call about replaying.
       if (!isIdempotent) {
         this.cleanup();
+        this.logger.warn("rpc abort (non-idempotent reconnect)", {
+          method,
+          durMs: Date.now() - start,
+        });
         throw new ReconnectAborted(method);
       }
 
       this.cleanup();
+      this.logger.info("rpc retry on reconnect", { method });
       await this.connect();
-      return this.callRaw(method, params, timeoutMs, isIdempotent);
+      const result = await this.callRaw(method, params, timeoutMs, isIdempotent);
+      this.logger.debug("rpc ok (after retry)", { method, durMs: Date.now() - start });
+      return result;
     }
   }
 

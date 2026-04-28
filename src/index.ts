@@ -5,10 +5,14 @@ import { TrueNASClient } from "./client.js";
 import { buildRegistry } from "./tools/index.js";
 import { registerResources } from "./resources.js";
 
+import { type Logger } from "./logger.js";
+
 export interface ServerConfig {
   baseUrl: string;
   apiKey: string;
   verifySsl?: boolean;
+  /** Optional structured logger threaded into the WebSocket client. */
+  logger?: Logger;
 }
 
 /**
@@ -30,6 +34,7 @@ export function createServer(config: ServerConfig): McpServer {
     baseUrl: config.baseUrl,
     apiKey: config.apiKey,
     verifySsl: config.verifySsl,
+    logger: config.logger,
   });
 
   const server = new McpServer({

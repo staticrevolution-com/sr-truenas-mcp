@@ -4,6 +4,7 @@ import { startStdio } from "./index.js";
 import { BUILD_VERSION } from "./version.js";
 import { TrueNASClient } from "./client.js";
 import { preflight, formatPreflightFailure } from "./preflight.js";
+import { createLogger } from "./logger.js";
 
 // Early exits — must run before env-var validation so they work without
 // TRUENAS_URL/TRUENAS_API_KEY set.
@@ -26,6 +27,7 @@ if (args.includes("--help") || args.includes("-h")) {
       "Optional environment:\n" +
       "  TRUENAS_VERIFY_SSL       set 'false' to skip TLS verification (warns on stderr)\n" +
       "  TRUENAS_SKIP_PREFLIGHT   set '1' to bypass the startup health check\n" +
+      "  TRUENAS_LOG_LEVEL        error|warn|info|debug — structured stderr logs (default: error)\n" +
       "\n" +
       "Flags:\n" +
       "  -v, --version        print version and exit\n" +
@@ -66,20 +68,23 @@ if (baseUrl.startsWith("http://") || baseUrl.startsWith("ws://")) {
 }
 
 async function main(): Promise<void> {
+  const logger = createLogger();
+
   // Pre-flight health check — verifies WS connect + auth + a trivial read
   // before MCP capabilities are announced. Bypassable for environments where
   // TrueNAS may legitimately be unreachable at startup.
   if (process.env.TRUENAS_SKIP_PREFLIGHT !== "1") {
-    const probe = new TrueNASClient({ baseUrl: baseUrl!, apiKey: apiKey!, verifySsl });
+    const probe = new TrueNASClient({ baseUrl: baseUrl!, apiKey: apiKey!, verifySsl, logger });
     const result = await preflight(probe, 5_000);
     probe.close();
     if (!result.ok) {
       console.error(formatPreflightFailure(result, baseUrl!));
       process.exit(1);
     }
+    logger.info("preflight ok", { durMs: result.durationMs });
   }
 
-  await startStdio({ baseUrl: baseUrl!, apiKey: apiKey!, verifySsl });
+  await startStdio({ baseUrl: baseUrl!, apiKey: apiKey!, verifySsl, logger });
 }
 
 main().catch((err) => {
