@@ -13,7 +13,7 @@ The deployed binary on TrueNAS is post-v1.0.0 master (sha256 `fa0ce982…`, mtim
 ```bash
 npm install
 npm run build          # tsc
-npm test               # vitest run (178 tests)
+npm test               # vitest run (189 tests)
 npm run type-check     # tsc --noEmit
 npm run dev            # tsc --watch
 npm run build:binary   # tsc + esbuild + pkg → dist/sr-truenas-mcp (Linux x64 binary)
