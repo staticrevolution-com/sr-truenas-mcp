@@ -4,3 +4,6 @@ coverage/
 *.tsbuildinfo
 .env
 .env.local
+
+# Large local-only API doc dumps (~667MB) — fetched per-version from truenas.com
+docs/truenas-v*-docs/

@@ -2,6 +2,12 @@
 
 Hardened MCP server for TrueNAS SCALE. Fork of `spranab/truenas-mcp`.
 
+## Active Roadmap
+
+**Current plan: [`PLAN.md`](./PLAN.md)** — Bulletproofing v1.0.1 → v1.1.0. Implementation status table at the top of the file. Historical record of the v1.0.0 hardening journey is at [`PLAN-v1.0.0.md`](./PLAN-v1.0.0.md).
+
+The deployed binary on TrueNAS is post-v1.0.0 master (sha256 `fa0ce982…`, mtime Apr 16) — not the v1.0.0 GitHub release. Closing that governance gap is plan item **A8**.
+
 ## Build & Test
 
 ```bash
@@ -30,8 +36,8 @@ Single MCP tool (`truenas`) with hierarchical discovery: 270 active actions acro
 - Tier 1/2 return detailed warnings with two-call confirmation flow
 - Fail-closed: unclassified actions rejected at registration
 - Runtime Zod validation wraps every handler
-- Response filtering (36-pattern sensitive field redaction) on all returns
-- Path validation on all 22 filesystem-touching handlers
+- Response filtering (30 exact-match sensitive field patterns; expanding to ~50 + suffix matcher in v1.0.1 — see PLAN.md A1) on all returns
+- Path validation on most filesystem-touching handlers (3 known gaps closing in v1.0.1 A2: `pool.dataset.create`, `sharing.smb.create`, `sharing.nfs.create`)
 
 ### Key Files
 
@@ -42,7 +48,7 @@ Single MCP tool (`truenas`) with hierarchical discovery: 270 active actions acro
 | `src/client.ts` | WebSocket JSON-RPC 2.0 client (DDP handshake, multiplexing, reconnect) |
 | `src/safety.ts` | Tier classification map (pure data, every action -> tier) |
 | `src/validation.ts` | Path validation (`/mnt/` prefix, no traversal) |
-| `src/filters.ts` | Response filtering (36 sensitive field patterns) |
+| `src/filters.ts` | Response filtering (30 exact-match patterns currently; layered exact+suffix+allowlist in v1.0.1 A1) |
 | `src/tools/*.ts` | 8 tool modules registering handlers |
 | `src/tools/index.ts` | `buildRegistry()` wiring |
 | `src/resources.ts` | 12 read-only MCP Resources (filtered) |
@@ -82,11 +88,11 @@ The LLM receives the warning as a normal tool response, presents it to the user,
 
 ### Response Filtering
 
-All handler and resource responses pass through `filterSensitiveFields()` which redacts 36 field patterns including: `password`, `privatekey`, `secret`, `api_key`, `token`, `community`, `unixhash`, `passphrase`, and more.
+All handler and resource responses pass through `filterSensitiveFields()` which redacts 30 exact-match field names including: `password`, `privatekey`, `secret`, `api_key`, `token`, `community`, `unixhash`, `passphrase`, and more. PLAN.md A1 expands this to a layered matcher (exact + suffix regex + NEVER_REDACT allowlist) and adds ~20 missing field names.
 
 ### Path Validation
 
-22 handlers across filesystem.ts, sharing.ts, replication.ts, and network.ts validate paths via `validateTrueNASPath()`: must start with `/mnt/`, no `..`, no null bytes.
+Filesystem-touching handlers across `src/tools/filesystem.ts`, `sharing.ts`, `replication.ts`, and `network.ts` validate paths via `validateTrueNASPath()`: must start with `/mnt/`, no `..`, no null bytes. **Three known coverage gaps** (`pool.dataset.create`, `sharing.smb.create`, `sharing.nfs.create`) close in PLAN.md A2.
 
 ## WebSocket Protocol
 
@@ -164,3 +170,11 @@ Update binary: SCP to `/tmp/sr-truenas-mcp` on TrueNAS, redeploy stack (init cop
 - `dataset_set_permissions` uses `filesystem.setperm` since `pool.dataset.permission` doesn't exist in WebSocket API.
 - `config.save` requires a binary pipe — handler returns informational message directing to TrueNAS web UI.
 - `npm audit` shows transitive hono vulnerabilities (not exploitable in stdio transport).
+
+
+---
+
+<!-- portainer-safety-ref -->
+## Portainer stack safety (global rule)
+
+Stack lifecycle (create/remove containers, networks, volumes) MUST flow through Portainer stack endpoints — NEVER via `dockerProxy`. Allowed `dockerProxy` ops: GETs, `/images/create` pulls, `restart`/`start`/`stop` on existing containers, `exec`, `prune`. Lifecycle routes: `redeployStackGit`, `startStack`, `stopStack`, GitOps webhook, `POST /stacks/create/standalone/repository`. See `~/.claude/rules/portainer-safety.md`. Enforced by PreToolUse hook `portainer-guard.py`.
