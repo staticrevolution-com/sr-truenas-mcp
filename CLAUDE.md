@@ -36,7 +36,7 @@ Single MCP tool (`truenas`) with hierarchical discovery: 270 active actions acro
 - Tier 1/2 return detailed warnings with two-call confirmation flow
 - Fail-closed: unclassified actions rejected at registration
 - Runtime Zod validation wraps every handler
-- Response filtering (30 exact-match sensitive field patterns; expanding to ~50 + suffix matcher in v1.0.1 — see PLAN.md A1) on all returns
+- Response filtering (layered matcher: 57 exact keys + 9 suffix patterns + 15-entry NEVER_REDACT allowlist; see `src/filters.ts`) on all returns
 - Path validation on most filesystem-touching handlers (3 known gaps closing in v1.0.1 A2: `pool.dataset.create`, `sharing.smb.create`, `sharing.nfs.create`)
 
 ### Key Files
@@ -48,7 +48,7 @@ Single MCP tool (`truenas`) with hierarchical discovery: 270 active actions acro
 | `src/client.ts` | WebSocket JSON-RPC 2.0 client (DDP handshake, multiplexing, reconnect) |
 | `src/safety.ts` | Tier classification map (pure data, every action -> tier) |
 | `src/validation.ts` | Path validation (`/mnt/` prefix, no traversal) |
-| `src/filters.ts` | Response filtering (30 exact-match patterns currently; layered exact+suffix+allowlist in v1.0.1 A1) |
+| `src/filters.ts` | Response filtering (layered: 57 exact + 9 suffix + 15 allowlist) |
 | `src/tools/*.ts` | 8 tool modules registering handlers |
 | `src/tools/index.ts` | `buildRegistry()` wiring |
 | `src/resources.ts` | 12 read-only MCP Resources (filtered) |
@@ -88,7 +88,7 @@ The LLM receives the warning as a normal tool response, presents it to the user,
 
 ### Response Filtering
 
-All handler and resource responses pass through `filterSensitiveFields()` which redacts 30 exact-match field names including: `password`, `privatekey`, `secret`, `api_key`, `token`, `community`, `unixhash`, `passphrase`, and more. PLAN.md A1 expands this to a layered matcher (exact + suffix regex + NEVER_REDACT allowlist) and adds ~20 missing field names.
+All handler and resource responses pass through `filterSensitiveFields()`, a 3-tier matcher: 57 exact keys (e.g. `password`, `privatekey`, `unixhash`, `salt`, `bindpw`, `recovery_codes`), 9 suffix patterns (`_password$`, `_token$`, `_secret$`, `_passphrase$`, `_seed$`, `_private_key$`, `_credentials$`, `_pin$`, `_passwd$`), and a 15-entry `NEVER_REDACT` allowlist that preserves benign `*_key` identifiers (`id_key`, `pool_key`, `vdev_key`, `device_key`), password-policy descriptors (`password_disabled`, `last_password_change`, `ssh_password_enabled`, …), and public-key material (`public_key`, `sshpubkey`, `authorized_keys`). Allowlist wins over both exact and suffix.
 
 ### Path Validation
 

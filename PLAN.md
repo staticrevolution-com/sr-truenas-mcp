@@ -8,7 +8,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 
 | ID | Item | Status | Notes |
 |---|---|---|---|
-| A1 | Hybrid response filter (exact + suffix + allowlist) | ⬜ pending | `src/filters.ts` — 30 → ~50 patterns |
+| A1 | Hybrid response filter (exact + suffix + allowlist) | ✅ done | `src/filters.ts` — 57 exact + 9 suffix + 15 allowlist |
 | A2 | Path validation gaps + `validateDatasetName` | ⬜ pending | dataset_create, smb/nfs share create, replication |
 | A3 | Schema tightening (high-risk methods) | ⬜ pending | system.general.update is highest priority |
 | A4a/b | WebSocket settle-once + send-error fix | ⬜ pending | `src/client.ts` race fixes |
