@@ -2,6 +2,36 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TrueNASClient } from "./client.js";
 import { filterSensitiveFields } from "./filters.js";
 
+/**
+ * Run a labelled set of TrueNAS calls in parallel and merge results. A
+ * single failed call must not blackhole the whole resource read — fulfilled
+ * calls populate their key, rejected calls populate `null` and append an
+ * entry to `_errors`. The `_errors` field is only present when at least one
+ * call rejected, so happy-path payloads stay clean.
+ */
+export async function gatherLabelled<L extends string>(
+  entries: ReadonlyArray<readonly [L, Promise<unknown>]>,
+): Promise<Record<L, unknown> & { _errors?: Array<{ source: L; error: string }> }> {
+  const settled = await Promise.allSettled(entries.map(([, p]) => p));
+  const out = {} as Record<L, unknown>;
+  const errors: Array<{ source: L; error: string }> = [];
+  settled.forEach((res, i) => {
+    const [label] = entries[i];
+    if (res.status === "fulfilled") {
+      out[label] = res.value;
+    } else {
+      out[label] = null;
+      const reason = res.reason;
+      const message = reason instanceof Error ? reason.message : String(reason);
+      errors.push({ source: label, error: message });
+    }
+  });
+  if (errors.length > 0) {
+    return { ...out, _errors: errors };
+  }
+  return out;
+}
+
 export function registerResources(server: McpServer, client: TrueNASClient): void {
   // System overview resource
   server.resource(
@@ -117,23 +147,24 @@ export function registerResources(server: McpServer, client: TrueNASClient): voi
     }
   );
 
-  // Shares resource
+  // Shares resource — partial-failure tolerant. If any one query rejects,
+  // the others still surface; rejected sources show up under `_errors`.
   server.resource(
     "shares",
     "truenas://sharing",
     { description: "All configured shares — SMB, NFS, and iSCSI" },
     async () => {
-      const [smb, nfs, iscsiTargets] = await Promise.all([
-        client.call("sharing.smb.query"),
-        client.call("sharing.nfs.query"),
-        client.call("iscsi.target.query"),
+      const merged = await gatherLabelled([
+        ["smb", client.call("sharing.smb.query")],
+        ["nfs", client.call("sharing.nfs.query")],
+        ["iscsi_targets", client.call("iscsi.target.query")],
       ]);
       return {
         contents: [
           {
             uri: "truenas://sharing",
             mimeType: "application/json",
-            text: JSON.stringify(filterSensitiveFields({ smb, nfs, iscsi_targets: iscsiTargets }), null, 2),
+            text: JSON.stringify(filterSensitiveFields(merged), null, 2),
           },
         ],
       };

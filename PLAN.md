@@ -15,7 +15,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | A4c | Reconnect cleanup preserves idempotent callers | ✅ done | `client.call()` honours idempotency: query/get_instance/config/core.get_jobs auto-retry; everything else throws `ReconnectAborted`. Replay-queue state machine deferred — overkill for stateless-gateway mode. |
 | A4d | Job polling: backoff + ws-state aware | ✅ done | `waitForJob` rewrite — exponential backoff (1s ×1.5, cap 15s), skips polls while ws disconnected. Pure `nextPollDelay` exported for tests. |
 | A5 | Test/doc accuracy + `audit:counts` script | ✅ done | Integration tool-count is now `registry.size + BLOCKED.size == ACTION_TIERS.size`; added `npm run audit:counts` (`scripts/audit-counts.mjs`) printing filter/tier/validation counts; CLAUDE.md test count + path-validation site counts refreshed against actuals (23 path + 3 dataset call sites, 167 tests). |
-| A6 | Resources fan-out: `Promise.allSettled` | ⬜ pending | `src/resources.ts` |
+| A6 | Resources fan-out: `Promise.allSettled` | ✅ done | `gatherLabelled()` helper in `src/resources.ts`; shares resource now tolerates per-source failures (rejected sources → `null` + `_errors` entry). 5 new tests. |
 | A7 | Memory cleanup (stale `disk_temperatures` entry) | ✅ done | Verified obsolete in deployed binary |
 | A9 | `--version` flag with embedded build SHA | ⬜ pending | Eliminates sha256-detective work |
 | A8 | Cut v1.0.1, deploy, drop /tmp shortcut | ⬜ pending | **Last; depends on A1–A7, A9** |
