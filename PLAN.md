@@ -18,7 +18,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | A6 | Resources fan-out: `Promise.allSettled` | ✅ done | `gatherLabelled()` helper in `src/resources.ts`; shares resource now tolerates per-source failures (rejected sources → `null` + `_errors` entry). 5 new tests. |
 | A7 | Memory cleanup (stale `disk_temperatures` entry) | ✅ done | Verified obsolete in deployed binary |
 | A9 | `--version` flag with embedded build SHA | ✅ done | `src/version.ts` + `src/cli.ts` `--version`/`-v` and `--help`/`-h`. `scripts/build-bundle.mjs` injects `__BUILD_VERSION__` (`<pkg.version>+<git-short-sha>[.dirty]`) via esbuild `--define`. Unbundled fallback is `"dev"`. |
-| A8 | Cut v1.0.1, deploy, drop /tmp shortcut | ▶ in progress | Version bumped, local v1.0.1 tag pending push approval. Deploy + /tmp wipe still ahead. |
+| A8 | Cut v1.0.1, deploy, drop /tmp shortcut | ✅ done | v1.0.1 tagged, GitHub release published (binary SHA `9114b23b…`). Deployed via /tmp → init → /bin-vol; /tmp wiped; subsequent restart fell through to /bin-vol cache cleanly. **Finding: GitHub-release fallback in agentgateway init is non-functional** — repo is private, init's anonymous `wget` 404s. Cache path covers normal flow, but disaster recovery (both /tmp + cache empty) needs B8. |
 | B1 | `destructiveHint` annotation | ⬜ pending | Phase B |
 | B2 | UUID request IDs + opt-in keepalive | ⬜ pending | Phase B |
 | B3 | Structured stderr logging (opt-in) | ⬜ pending | Phase B |
@@ -26,6 +26,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | B5 | Pre-flight health check (optional) | ⬜ pending | Phase B |
 | B6 | `npm audit` cleanup pass | ⬜ pending | Phase B |
 | B7 | Filter doc-sync drift gate | ⬜ pending | Phase B |
+| B8 | Authenticate agentgateway init's GitHub-release fetch | ⬜ pending | Repo is private; busybox `wget` in `truenas-mcp-init` 404s anonymously. Surfaced during A8. Disaster-recovery path (both `/tmp` and `/bin-vol` cache empty) currently fails. Options: GitHub PAT in stack env + `wget --header "Authorization: Bearer ..."`, or mirror the binary somewhere unauthenticated, or bake binary into the combined image. |
 
 Update this table as items land. ⬜ = pending, ▶ = in progress, ✅ = done, ⏭ = skipped, 🚧 = blocked.
 
@@ -462,17 +463,16 @@ These can be made between v1.0.1 and v1.1.0 ships:
 
 ---
 
-## Deployed-binary state (as of 2026-04-28)
+## Deployed-binary state (post-A8, 2026-04-28)
 
 - Path: `/opt/mcp-bin/sr-truenas-mcp` inside the `sr-agentgateway` container on TrueNAS endpoint 11.
-- SHA256: `fa0ce982f6e8cb799b75de4d34606e58afa406f35f53bc3363278d592ef92322`
-- Size: 57,700,511 bytes; mtime `Apr 16 16:18`.
-- Origin: built from a master commit at or after `723980e` (the `disk_temperatures` fix). **Not** the v1.0.0 release asset.
-- v1.0.0 release asset SHA256 (for comparison): `10e2bb8f43ad6f8d73c3c196108d3198d457efd202e4b452c29e90c58e20c733`.
-- Deploy path: SCP'd to TrueNAS host `/tmp/sr-truenas-mcp`; init container `cp -f /host-tmp/sr-truenas-mcp /bin-vol/...` overlays the v1.0.0 GitHub fallback.
-- Operational health: green over the 24h log window prior to 2026-04-28 (zero panics, zero session errors, zero ws connection errors).
+- SHA256: `9114b23b4d83dfc515d4b36f8a7f83a5156200b23202b15937b7f517c2027b40` (matches GitHub release v1.0.1).
+- Size: 57,708,032 bytes.
+- `--version`: `1.0.1+7f19f82` (built from commit `7f19f82`).
+- Source path on host: `/mnt/data-pool/apps/agentgateway/bin/sr-truenas-mcp` (the volume mount); `/tmp/sr-truenas-mcp` no longer exists.
+- Operational health: agentgateway reset cleanly through stop/start; init logged "binary already exists"; first MCP exec inside container returned the new version stamp.
 
-The unreleased-binary-in-prod state is a governance issue (rollback target doesn't exist in GitHub releases). A8 closes it.
+A8 also surfaced **B8** (GitHub-release fallback for the init container is broken — repo is private, anonymous `wget` 404s). Normal-flow updates remain unaffected; only disaster recovery from a fully-empty `/bin-vol` is currently impossible.
 
 ## What lands first
 
