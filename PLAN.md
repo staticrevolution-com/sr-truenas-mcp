@@ -13,7 +13,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | A3 | Schema tightening (high-risk methods) | ✅ done | pool/dataset/replication/vm/network/sharing/system tightened; system_general_update unknown-key allowlist enforced at handler |
 | A4a/b | WebSocket settle-once + send-error fix | ✅ done | `src/client.ts` — `settled` flag + `settlePending()` helper + `WebSocketSendError` + sync-throw try/catch |
 | A4c | Reconnect cleanup preserves idempotent callers | ✅ done | `client.call()` honours idempotency: query/get_instance/config/core.get_jobs auto-retry; everything else throws `ReconnectAborted`. Replay-queue state machine deferred — overkill for stateless-gateway mode. |
-| A4d | Job polling: backoff + ws-state aware | ⬜ pending | `waitForJob` rewrite |
+| A4d | Job polling: backoff + ws-state aware | ✅ done | `waitForJob` rewrite — exponential backoff (1s ×1.5, cap 15s), skips polls while ws disconnected. Pure `nextPollDelay` exported for tests. |
 | A5 | Test/doc accuracy + `audit:counts` script | ⬜ pending | Dynamic count assertion |
 | A6 | Resources fan-out: `Promise.allSettled` | ⬜ pending | `src/resources.ts` |
 | A7 | Memory cleanup (stale `disk_temperatures` entry) | ✅ done | Verified obsolete in deployed binary |

@@ -89,6 +89,25 @@ function inferIdempotent(method: string): boolean {
   return IDEMPOTENT_METHOD_RE.test(method);
 }
 
+/** Initial delay between job-poll attempts. Exported for tests. */
+export const INITIAL_POLL_DELAY_MS = 1_000;
+
+/** Cap on the job-poll delay after backoff. Exported for tests. */
+export const MAX_POLL_DELAY_MS = 15_000;
+
+/**
+ * Compute the next poll delay from the current one — exponential growth
+ * (×1.5) capped at MAX_POLL_DELAY_MS. Pure helper so the backoff curve
+ * can be asserted directly without driving a full waitForJob loop.
+ */
+export function nextPollDelay(currentMs: number): number {
+  return Math.min(Math.floor(currentMs * 1.5), MAX_POLL_DELAY_MS);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class TrueNASClient {
   private wsUrl: string;
   private apiKey: string;
@@ -321,15 +340,30 @@ export class TrueNASClient {
 
   /**
    * Wait for a long-running job to complete.
-   * Polls core.get_jobs until the job reaches a terminal state.
+   * Polls core.get_jobs with exponential backoff (start 1s, ×1.5, cap 15s)
+   * and skips poll attempts while the WebSocket is disconnected so we
+   * don't burn timeout budget hammering reconnects.
    */
   async waitForJob(jobId: number, timeoutMs = 300_000): Promise<JobResult> {
     const start = Date.now();
+    let delay = INITIAL_POLL_DELAY_MS;
+
     while (Date.now() - start < timeoutMs) {
+      const remaining = timeoutMs - (Date.now() - start);
+
+      // If the ws isn't connected, sleep first and let the next call()
+      // attempt the reconnect through its normal path. Avoids back-to-back
+      // reconnect storms when TrueNAS is down.
+      if (!this.isConnected()) {
+        await sleep(Math.min(delay, remaining));
+        delay = nextPollDelay(delay);
+        continue;
+      }
+
       const jobs = await this.call(
         "core.get_jobs",
         [[["id", "=", jobId]]],
-        30_000
+        30_000,
       ) as JobResult[];
 
       const target = Array.isArray(jobs)
@@ -345,9 +379,15 @@ export class TrueNASClient {
           throw new Error(`Job ${jobId} was aborted`);
         }
       }
-      await new Promise((r) => setTimeout(r, 2000));
+
+      await sleep(Math.min(delay, timeoutMs - (Date.now() - start)));
+      delay = nextPollDelay(delay);
     }
     throw new Error(`Job ${jobId} timed out after ${timeoutMs}ms`);
+  }
+
+  private isConnected(): boolean {
+    return !!this.ws && this.ws.readyState === WebSocket.OPEN && this.authenticated;
   }
 
   /** Test connectivity via WebSocket ping. */

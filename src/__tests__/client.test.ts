@@ -44,7 +44,7 @@ vi.mock("ws", () => ({
 }));
 
 // Import after mock is set up
-const { TrueNASClient, WebSocketSendError, ReconnectAborted } = await import("../client.js");
+const { TrueNASClient, WebSocketSendError, ReconnectAborted, nextPollDelay, INITIAL_POLL_DELAY_MS, MAX_POLL_DELAY_MS } = await import("../client.js");
 
 describe("TrueNASClient WebSocket", () => {
   let client: InstanceType<typeof TrueNASClient>;
@@ -342,6 +342,97 @@ describe("TrueNASClient WebSocket", () => {
       mockWs.emit("close");
 
       await expect(callPromise).rejects.toBeInstanceOf(ReconnectAborted);
+    });
+  });
+
+  describe("waitForJob backoff (A4d)", () => {
+    it("nextPollDelay grows by ×1.5 and caps at MAX_POLL_DELAY_MS", () => {
+      // 1000 → 1500 → 2250 → 3375 → 5062 → 7593 → 11389 → 15000 (cap) → 15000
+      let delay = INITIAL_POLL_DELAY_MS;
+      const sequence = [delay];
+      for (let i = 0; i < 10; i++) {
+        delay = nextPollDelay(delay);
+        sequence.push(delay);
+      }
+      expect(sequence[0]).toBe(1000);
+      expect(sequence[1]).toBe(1500);
+      expect(sequence[2]).toBe(2250);
+      // Eventually saturates
+      expect(sequence[sequence.length - 1]).toBe(MAX_POLL_DELAY_MS);
+      // Monotonic non-decreasing
+      for (let i = 1; i < sequence.length; i++) {
+        expect(sequence[i]).toBeGreaterThanOrEqual(sequence[i - 1]);
+      }
+      // Never exceeds the cap
+      for (const d of sequence) expect(d).toBeLessThanOrEqual(MAX_POLL_DELAY_MS);
+    });
+
+    it("returns the JobResult when the job reaches SUCCESS", async () => {
+      await client.connect();
+
+      // Drive the first core.get_jobs to return SUCCESS so waitForJob
+      // resolves on the first iteration without sleeping.
+      const jobPromise = client.waitForJob(42, 5_000);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const sent = mockWs.sentMessages.map((s) => JSON.parse(s));
+      const pollMsg = sent.reverse().find((m) => m.method === "core.get_jobs");
+      expect(pollMsg).toBeDefined();
+      mockWs.serverSend({
+        id: pollMsg!.id,
+        msg: "result",
+        result: [{ id: 42, method: "test", state: "SUCCESS", progress: { percent: 100, description: "" }, result: "ok", error: null, time_started: null, time_finished: null }],
+      });
+
+      const result = await jobPromise;
+      expect(result.state).toBe("SUCCESS");
+      expect(result.result).toBe("ok");
+    });
+
+    it("throws when the job is FAILED", async () => {
+      await client.connect();
+
+      const jobPromise = client.waitForJob(43, 5_000);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const sent = mockWs.sentMessages.map((s) => JSON.parse(s));
+      const pollMsg = sent.reverse().find((m) => m.method === "core.get_jobs");
+      mockWs.serverSend({
+        id: pollMsg!.id,
+        msg: "result",
+        result: [{ id: 43, method: "test", state: "FAILED", progress: { percent: 0, description: "" }, result: null, error: "boom", time_started: null, time_finished: null }],
+      });
+
+      await expect(jobPromise).rejects.toThrow("boom");
+    });
+
+    it("times out when the job never finishes", async () => {
+      await client.connect();
+
+      // Tiny timeout so the test stays fast. Job stays RUNNING; the loop
+      // exits via the outer timeoutMs check.
+      const jobPromise = client.waitForJob(44, 50);
+
+      // Auto-respond to every core.get_jobs with RUNNING so the loop
+      // continues until the outer timeout fires.
+      const origSend = MockWebSocket.prototype.send;
+      MockWebSocket.prototype.send = function (data: string, cb?: (err?: Error) => void) {
+        this.sentMessages.push(data);
+        cb?.();
+        const msg = JSON.parse(data);
+        if (msg.method === "core.get_jobs") {
+          setTimeout(() => this.emit("message", JSON.stringify({
+            id: msg.id, msg: "result",
+            result: [{ id: 44, method: "test", state: "RUNNING", progress: { percent: 50, description: "" }, result: null, error: null, time_started: null, time_finished: null }],
+          })), 0);
+        }
+      };
+
+      try {
+        await expect(jobPromise).rejects.toThrow(/timed out/);
+      } finally {
+        MockWebSocket.prototype.send = origSend;
+      }
     });
   });
 
