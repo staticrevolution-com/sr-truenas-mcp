@@ -1,6 +1,35 @@
 #!/usr/bin/env node
 
 import { startStdio } from "./index.js";
+import { BUILD_VERSION } from "./version.js";
+
+// Early exits — must run before env-var validation so they work without
+// TRUENAS_URL/TRUENAS_API_KEY set.
+const args = process.argv.slice(2);
+if (args.includes("--version") || args.includes("-v")) {
+  console.log(BUILD_VERSION);
+  process.exit(0);
+}
+if (args.includes("--help") || args.includes("-h")) {
+  console.log(
+    `sr-truenas-mcp ${BUILD_VERSION}\n` +
+      "\n" +
+      "Hardened MCP server for TrueNAS SCALE. Reads its TrueNAS endpoint\n" +
+      "from environment variables and speaks MCP over stdio.\n" +
+      "\n" +
+      "Required environment:\n" +
+      "  TRUENAS_URL          TrueNAS base URL (e.g. wss://192.168.1.235:444)\n" +
+      "  TRUENAS_API_KEY      API key from TrueNAS UI (Credentials -> API Keys)\n" +
+      "\n" +
+      "Optional environment:\n" +
+      "  TRUENAS_VERIFY_SSL   set 'false' to skip TLS verification (warns on stderr)\n" +
+      "\n" +
+      "Flags:\n" +
+      "  -v, --version        print version and exit\n" +
+      "  -h, --help           print this help and exit\n",
+  );
+  process.exit(0);
+}
 
 const baseUrl = process.env.TRUENAS_URL || process.env.TRUENAS_HOST;
 const apiKey = process.env.TRUENAS_API_KEY;

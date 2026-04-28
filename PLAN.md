@@ -17,7 +17,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | A5 | Test/doc accuracy + `audit:counts` script | ✅ done | Integration tool-count is now `registry.size + BLOCKED.size == ACTION_TIERS.size`; added `npm run audit:counts` (`scripts/audit-counts.mjs`) printing filter/tier/validation counts; CLAUDE.md test count + path-validation site counts refreshed against actuals (23 path + 3 dataset call sites, 167 tests). |
 | A6 | Resources fan-out: `Promise.allSettled` | ✅ done | `gatherLabelled()` helper in `src/resources.ts`; shares resource now tolerates per-source failures (rejected sources → `null` + `_errors` entry). 5 new tests. |
 | A7 | Memory cleanup (stale `disk_temperatures` entry) | ✅ done | Verified obsolete in deployed binary |
-| A9 | `--version` flag with embedded build SHA | ⬜ pending | Eliminates sha256-detective work |
+| A9 | `--version` flag with embedded build SHA | ✅ done | `src/version.ts` + `src/cli.ts` `--version`/`-v` and `--help`/`-h`. `scripts/build-bundle.mjs` injects `__BUILD_VERSION__` (`<pkg.version>+<git-short-sha>[.dirty]`) via esbuild `--define`. Unbundled fallback is `"dev"`. |
 | A8 | Cut v1.0.1, deploy, drop /tmp shortcut | ⬜ pending | **Last; depends on A1–A7, A9** |
 | B1 | `destructiveHint` annotation | ⬜ pending | Phase B |
 | B2 | UUID request IDs + opt-in keepalive | ⬜ pending | Phase B |

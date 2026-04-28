@@ -13,7 +13,7 @@ The deployed binary on TrueNAS is post-v1.0.0 master (sha256 `fa0ce982…`, mtim
 ```bash
 npm install
 npm run build          # tsc
-npm test               # vitest run (172 tests)
+npm test               # vitest run (173 tests)
 npm run type-check     # tsc --noEmit
 npm run dev            # tsc --watch
 npm run build:binary   # tsc + esbuild + pkg → dist/sr-truenas-mcp (Linux x64 binary)
@@ -23,6 +23,8 @@ npm run audit:counts   # print structural counts (filter, tiers, validation surf
 ### Standalone Binary
 
 `npm run build:binary` produces a self-contained Linux x64 ELF binary at `dist/sr-truenas-mcp` (~55MB). Embeds Node.js 20 runtime via esbuild bundling + @yao-pkg/pkg. Used for AgentGateway stdio deployment.
+
+The bundle step (`scripts/build-bundle.mjs`) injects `__BUILD_VERSION__` (`<pkg.version>+<git-short-sha>[.dirty]`) via esbuild `--define`. The binary then exposes it through `--version`/`-v`, so the deployed artifact identifies itself without sha256-detective work. Direct `node dist/cli.js` (no bundle step) reports `dev`.
 
 GitHub releases include pre-built `sr-truenas-mcp-linux-x64.tar.gz` with SHA256 checksums.
 
