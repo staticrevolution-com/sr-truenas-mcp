@@ -11,7 +11,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | A1 | Hybrid response filter (exact + suffix + allowlist) | ✅ done | `src/filters.ts` — 57 exact + 9 suffix + 15 allowlist |
 | A2 | Path validation gaps + `validateDatasetName` | ✅ done | dataset_create + replication_create. (Audit was stale on smb/nfs — those already validated.) |
 | A3 | Schema tightening (high-risk methods) | ✅ done | pool/dataset/replication/vm/network/sharing/system tightened; system_general_update unknown-key allowlist enforced at handler |
-| A4a/b | WebSocket settle-once + send-error fix | ⬜ pending | `src/client.ts` race fixes |
+| A4a/b | WebSocket settle-once + send-error fix | ✅ done | `src/client.ts` — `settled` flag + `settlePending()` helper + `WebSocketSendError` + sync-throw try/catch |
 | A4c | Reconnect cleanup preserves idempotent callers | ⬜ pending | Idempotency hint plumbing |
 | A4d | Job polling: backoff + ws-state aware | ⬜ pending | `waitForJob` rewrite |
 | A5 | Test/doc accuracy + `audit:counts` script | ⬜ pending | Dynamic count assertion |

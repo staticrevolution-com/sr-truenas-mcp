@@ -44,7 +44,7 @@ vi.mock("ws", () => ({
 }));
 
 // Import after mock is set up
-const { TrueNASClient } = await import("../client.js");
+const { TrueNASClient, WebSocketSendError } = await import("../client.js");
 
 describe("TrueNASClient WebSocket", () => {
   let client: InstanceType<typeof TrueNASClient>;
@@ -239,6 +239,130 @@ describe("TrueNASClient WebSocket", () => {
       client.close();
 
       await expect(callPromise).rejects.toThrow("closing");
+    });
+  });
+
+  describe("settle-once race (A4a)", () => {
+    it("late server response after timeout does not cause a second settlement", async () => {
+      await client.connect();
+
+      // Track unhandled rejections — a double-settle on a rejected promise
+      // doesn't surface as an UnhandledPromiseRejection (Promise semantics
+      // protect us), but a regression in settlePending's idempotency could
+      // delete a fresh entry by the same id. Drive it from the observable
+      // side: the caller's promise must reject with the timeout error, and
+      // a subsequent matching response must be silently ignored.
+      const callPromise = client.call("slow.method", [], 50);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const callMsg = JSON.parse(mockWs.sentMessages[2]);
+
+      await expect(callPromise).rejects.toThrow("timed out");
+
+      // Now the server sends a late response with the SAME id. settlePending
+      // must no-op — the entry was already deleted — and the caller's
+      // (already-rejected) promise must not change.
+      expect(() => mockWs.serverSend({ id: callMsg.id, msg: "result", result: "late" })).not.toThrow();
+    });
+
+    it("close() while a request is pending settles exactly once", async () => {
+      await client.connect();
+
+      const callPromise = client.call("slow.method", [], 30_000);
+      await new Promise((r) => setTimeout(r, 10));
+      const callMsg = JSON.parse(mockWs.sentMessages[2]);
+
+      client.close();
+      await expect(callPromise).rejects.toThrow("closing");
+
+      // Server response after close (same id): handler routes through
+      // settlePending which no-ops. No throw, no double settle.
+      expect(() => mockWs.serverSend({ id: callMsg.id, msg: "result", result: "late" })).not.toThrow();
+    });
+  });
+
+  describe("send-error fix (A4b)", () => {
+    it("rejects with WebSocketSendError when ws.send invokes its callback with an error", async () => {
+      await client.connect();
+
+      // Patch send to invoke the cb with an error (next call only).
+      const origSend = MockWebSocket.prototype.send;
+      let calls = 0;
+      MockWebSocket.prototype.send = function (data: string, cb?: (err?: Error) => void) {
+        this.sentMessages.push(data);
+        const msg = JSON.parse(data);
+        if (msg.method === "pool.query") {
+          calls++;
+          cb?.(new Error("EPIPE"));
+        } else {
+          cb?.();
+        }
+      };
+
+      try {
+        const callPromise = client.call("pool.query", []);
+        await expect(callPromise).rejects.toBeInstanceOf(WebSocketSendError);
+        expect(calls).toBe(1);
+      } finally {
+        MockWebSocket.prototype.send = origSend;
+      }
+    });
+
+    it("rejects with WebSocketSendError when ws.send throws synchronously", async () => {
+      await client.connect();
+
+      // Use an error string that does NOT match isConnectionError() —
+      // otherwise client.call() retries via reconnect, and the override
+      // here doesn't handle the new handshake. The synchronous-throw path
+      // we want to exercise is the try/catch in callRaw.
+      const origSend = MockWebSocket.prototype.send;
+      MockWebSocket.prototype.send = function (data: string, cb?: (err?: Error) => void) {
+        const msg = JSON.parse(data);
+        if (msg.method === "pool.query") {
+          throw new Error("send buffer full");
+        }
+        this.sentMessages.push(data);
+        cb?.();
+      };
+
+      try {
+        const callPromise = client.call("pool.query", []);
+        await expect(callPromise).rejects.toBeInstanceOf(WebSocketSendError);
+        await expect(callPromise).rejects.toThrow("send buffer full");
+      } finally {
+        MockWebSocket.prototype.send = origSend;
+      }
+    });
+
+    it("WebSocketSendError leaves no orphan entry in pending map", async () => {
+      await client.connect();
+
+      const origSend = MockWebSocket.prototype.send;
+      MockWebSocket.prototype.send = function (data: string, cb?: (err?: Error) => void) {
+        const msg = JSON.parse(data);
+        if (msg.method === "pool.query") {
+          cb?.(new Error("EPIPE"));
+          return;
+        }
+        this.sentMessages.push(data);
+        cb?.();
+      };
+
+      try {
+        await expect(client.call("pool.query", [])).rejects.toBeInstanceOf(WebSocketSendError);
+        // The pending entry must be cleaned up — verify by making a new call
+        // and confirming it gets a fresh id (not blocked by leftover state).
+        // We can't read pending directly (private), but a successful follow-up
+        // with a normal send proves no fatal state leaked.
+        MockWebSocket.prototype.send = origSend;
+        const followup = client.call("system.info", []);
+        await new Promise((r) => setTimeout(r, 10));
+        const last = JSON.parse(mockWs.sentMessages[mockWs.sentMessages.length - 1]);
+        mockWs.serverSend({ id: last.id, msg: "result", result: { version: "x" } });
+        expect(await followup).toEqual({ version: "x" });
+      } finally {
+        MockWebSocket.prototype.send = origSend;
+      }
     });
   });
 });

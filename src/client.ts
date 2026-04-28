@@ -47,6 +47,20 @@ interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  settled: boolean;
+}
+
+/**
+ * Thrown when a request fails to be written to the WebSocket — either
+ * because `ws.send` invoked its callback with an error, or threw
+ * synchronously. Distinct from API-level errors so callers can
+ * distinguish "never reached the server" from "server rejected".
+ */
+export class WebSocketSendError extends Error {
+  constructor(message: string) {
+    super(`Failed to send request: ${message}`);
+    this.name = "WebSocketSendError";
+  }
 }
 
 export class TrueNASClient {
@@ -174,18 +188,12 @@ export class TrueNASClient {
         const msg = JSON.parse(data.toString()) as DDPResponse;
         if (!msg.id) return; // Ignore messages without IDs (ping, sub events)
 
-        const pending = this.pending.get(msg.id);
-        if (!pending) return; // Response for unknown request
-
-        this.pending.delete(msg.id);
-        clearTimeout(pending.timer);
-
         if (msg.msg === "failed" || msg.error) {
           const errMsg = msg.error?.message || "API call failed";
           const code = msg.error?.code ? ` (code ${msg.error.code})` : "";
-          pending.reject(new Error(`TrueNAS API error: ${errMsg}${code}`));
+          this.settlePending(msg.id, "reject", new Error(`TrueNAS API error: ${errMsg}${code}`));
         } else {
-          pending.resolve(msg.result);
+          this.settlePending(msg.id, "resolve", msg.result);
         }
       } catch {
         // Ignore unparseable messages
@@ -232,21 +240,41 @@ export class TrueNASClient {
       const id = String(++this.requestId);
 
       const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Request timed out after ${timeoutMs}ms: ${method}`));
+        this.settlePending(id, "reject", new Error(`Request timed out after ${timeoutMs}ms: ${method}`));
       }, timeoutMs);
 
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, settled: false });
 
       const request: DDPRequest = { id, msg: "method", method, params };
-      this.ws.send(JSON.stringify(request), (err) => {
-        if (err) {
-          this.pending.delete(id);
-          clearTimeout(timer);
-          reject(new Error(`Failed to send request: ${err.message}`));
-        }
-      });
+      const payload = JSON.stringify(request);
+
+      try {
+        this.ws.send(payload, (err) => {
+          if (err) this.settlePending(id, "reject", new WebSocketSendError(err.message));
+        });
+      } catch (e) {
+        this.settlePending(id, "reject", new WebSocketSendError(e instanceof Error ? e.message : String(e)));
+      }
     });
+  }
+
+  /**
+   * Single state-transition point for settling a pending request.
+   * Idempotent: subsequent calls for the same id are no-ops. This eliminates
+   * the late-response-after-timeout race and any double-settle attempts from
+   * timer / message-handler / send-error / close / error paths.
+   */
+  private settlePending(id: string, mode: "resolve" | "reject", payload: unknown): void {
+    const req = this.pending.get(id);
+    if (!req || req.settled) return;
+    req.settled = true;
+    this.pending.delete(id);
+    clearTimeout(req.timer);
+    if (mode === "resolve") {
+      req.resolve(payload);
+    } else {
+      req.reject(payload as Error);
+    }
   }
 
   /**
@@ -308,11 +336,11 @@ export class TrueNASClient {
   }
 
   private failAllPending(error: Error): void {
-    for (const [id, pending] of this.pending) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
+    // Snapshot ids so iteration is unaffected by settlePending's map mutations.
+    const ids = [...this.pending.keys()];
+    for (const id of ids) {
+      this.settlePending(id, "reject", error);
     }
-    this.pending.clear();
   }
 
 }
