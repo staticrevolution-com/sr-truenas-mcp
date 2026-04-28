@@ -13,6 +13,8 @@ export interface ServerConfig {
   verifySsl?: boolean;
   /** Optional structured logger threaded into the WebSocket client. */
   logger?: Logger;
+  /** Keepalive ping interval in ms. 0 disables. See `TrueNASClientConfig`. */
+  keepaliveIntervalMs?: number;
 }
 
 /**
@@ -35,6 +37,7 @@ export function createServer(config: ServerConfig): McpServer {
     apiKey: config.apiKey,
     verifySsl: config.verifySsl,
     logger: config.logger,
+    keepaliveIntervalMs: config.keepaliveIntervalMs,
   });
 
   const server = new McpServer({

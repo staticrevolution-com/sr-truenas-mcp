@@ -105,10 +105,11 @@ describe("TrueNASClient WebSocket", () => {
       expect(authMsg.params).toEqual(["test-api-key"]);
     });
 
-    it("uses incrementing string IDs", async () => {
+    it("uses RFC 4122 UUID string IDs (B2)", async () => {
       await client.connect();
       const authMsg = JSON.parse(mockWs.sentMessages[1]);
-      expect(authMsg.id).toBe("1");
+      // randomUUID() — 8-4-4-4-12 hex with dashes; case-insensitive.
+      expect(authMsg.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     });
   });
 
@@ -518,6 +519,58 @@ describe("TrueNASClient WebSocket", () => {
       } finally {
         MockWebSocket.prototype.send = origSend;
       }
+    });
+  });
+
+  describe("keepalive (B2)", () => {
+    it("does not send any pings when keepaliveIntervalMs is 0 (default)", async () => {
+      await client.connect();
+      const before = mockWs.sentMessages.length;
+      await new Promise((r) => setTimeout(r, 80));
+      const systemInfoCount = mockWs.sentMessages
+        .slice(before)
+        .map((s) => JSON.parse(s))
+        .filter((m) => m.method === "system.info").length;
+      expect(systemInfoCount).toBe(0);
+    });
+
+    it("sends periodic system.info pings when keepaliveIntervalMs > 0", async () => {
+      // Use a fresh client with a small interval. interceptWs() auto-responds
+      // to handshake + auth; system.info pings just accumulate as pending and
+      // get cleaned up by client.close() in afterEach.
+      const ka = new TrueNASClient({
+        baseUrl: "https://192.168.1.235",
+        apiKey: "test-api-key",
+        verifySsl: false,
+        keepaliveIntervalMs: 30,
+      });
+      await ka.connect();
+      // Wait for at least 2 ticks of the 30ms interval.
+      await new Promise((r) => setTimeout(r, 100));
+      const sent = mockWs.sentMessages.map((s) => JSON.parse(s));
+      const pings = sent.filter((m) => m.method === "system.info");
+      expect(pings.length).toBeGreaterThanOrEqual(2);
+      ka.close();
+    });
+
+    it("stops pinging after close()", async () => {
+      const ka = new TrueNASClient({
+        baseUrl: "https://192.168.1.235",
+        apiKey: "test-api-key",
+        verifySsl: false,
+        keepaliveIntervalMs: 30,
+      });
+      await ka.connect();
+      await new Promise((r) => setTimeout(r, 60));
+      ka.close();
+      const countAtClose = mockWs.sentMessages
+        .map((s) => JSON.parse(s))
+        .filter((m) => m.method === "system.info").length;
+      await new Promise((r) => setTimeout(r, 100));
+      const countLater = mockWs.sentMessages
+        .map((s) => JSON.parse(s))
+        .filter((m) => m.method === "system.info").length;
+      expect(countLater).toBe(countAtClose);
     });
   });
 });

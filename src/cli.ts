@@ -28,6 +28,7 @@ if (args.includes("--help") || args.includes("-h")) {
       "  TRUENAS_VERIFY_SSL       set 'false' to skip TLS verification (warns on stderr)\n" +
       "  TRUENAS_SKIP_PREFLIGHT   set '1' to bypass the startup health check\n" +
       "  TRUENAS_LOG_LEVEL        error|warn|info|debug — structured stderr logs (default: error)\n" +
+      "  TRUENAS_KEEPALIVE_INTERVAL_MS  ms between idle system.info pings (default: 0 = disabled)\n" +
       "\n" +
       "Flags:\n" +
       "  -v, --version        print version and exit\n" +
@@ -70,6 +71,10 @@ if (baseUrl.startsWith("http://") || baseUrl.startsWith("ws://")) {
 async function main(): Promise<void> {
   const logger = createLogger();
 
+  // Optional keepalive — env-driven. Default disabled (0).
+  const rawKeepalive = process.env.TRUENAS_KEEPALIVE_INTERVAL_MS;
+  const keepaliveIntervalMs = rawKeepalive ? Math.max(0, parseInt(rawKeepalive, 10) || 0) : 0;
+
   // Pre-flight health check — verifies WS connect + auth + a trivial read
   // before MCP capabilities are announced. Bypassable for environments where
   // TrueNAS may legitimately be unreachable at startup.
@@ -84,7 +89,7 @@ async function main(): Promise<void> {
     logger.info("preflight ok", { durMs: result.durationMs });
   }
 
-  await startStdio({ baseUrl: baseUrl!, apiKey: apiKey!, verifySsl, logger });
+  await startStdio({ baseUrl: baseUrl!, apiKey: apiKey!, verifySsl, logger, keepaliveIntervalMs });
 }
 
 main().catch((err) => {

@@ -11,6 +11,7 @@
  */
 
 import WebSocket from "ws";
+import { randomUUID } from "node:crypto";
 import { type Logger, noopLogger } from "./logger.js";
 
 export interface TrueNASClientConfig {
@@ -19,6 +20,14 @@ export interface TrueNASClientConfig {
   verifySsl?: boolean;
   /** Optional structured logger — defaults to a no-op. */
   logger?: Logger;
+  /**
+   * Periodic `system.info` ping interval, in milliseconds. Default `0`
+   * (disabled). Useful only for persistent-mode deploys where the same
+   * WebSocket is held open across long idle gaps; AgentGateway's stateless
+   * mode tears down sessions per request, so this is dead weight there.
+   * Can be set via `TRUENAS_KEEPALIVE_INTERVAL_MS`.
+   */
+  keepaliveIntervalMs?: number;
 }
 
 export interface JobResult {
@@ -116,18 +125,20 @@ export class TrueNASClient {
   private apiKey: string;
   private verifySsl: boolean;
   private logger: Logger;
+  private keepaliveIntervalMs: number;
 
   private ws: WebSocket | null = null;
-  private requestId = 0;
   private pending = new Map<string, PendingRequest>();
   private authenticated = false;
   private connectPromise: Promise<void> | null = null;
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: TrueNASClientConfig) {
     const base = config.baseUrl.replace(/\/+$/, "");
     this.apiKey = config.apiKey;
     this.verifySsl = config.verifySsl ?? true;
     this.logger = config.logger ?? noopLogger;
+    this.keepaliveIntervalMs = config.keepaliveIntervalMs ?? 0;
 
     // Build WebSocket URL
     this.wsUrl = toWsUrl(base);
@@ -191,6 +202,32 @@ export class TrueNASClient {
     }
     this.authenticated = true;
     this.logger.info("ws connected", { url: this.wsUrl });
+    this.startKeepalive();
+  }
+
+  private startKeepalive(): void {
+    if (this.keepaliveIntervalMs <= 0) return;
+    this.stopKeepalive();
+    this.keepaliveTimer = setInterval(() => {
+      this.callRaw("system.info", [], 5_000, true)
+        .then(() => this.logger.debug("keepalive ok"))
+        .catch((err) => {
+          this.logger.warn("keepalive failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+    }, this.keepaliveIntervalMs);
+    // Don't keep the event loop alive on this timer alone.
+    if (typeof this.keepaliveTimer.unref === "function") {
+      this.keepaliveTimer.unref();
+    }
+  }
+
+  private stopKeepalive(): void {
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
   }
 
   private async handshake(): Promise<void> {
@@ -324,7 +361,7 @@ export class TrueNASClient {
         return;
       }
 
-      const id = String(++this.requestId);
+      const id = randomUUID();
 
       const timer = setTimeout(() => {
         this.settlePending(id, "reject", new Error(`Request timed out after ${timeoutMs}ms: ${method}`));
@@ -432,6 +469,7 @@ export class TrueNASClient {
   }
 
   private cleanup(): void {
+    this.stopKeepalive();
     this.failAllPending(new Error("Connection closing"));
     this.authenticated = false;
     if (this.ws) {
