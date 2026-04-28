@@ -26,7 +26,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | B5 | Pre-flight health check (optional) | ⬜ pending | Phase B |
 | B6 | `npm audit` cleanup pass | ⬜ pending | Phase B |
 | B7 | Filter doc-sync drift gate | ⬜ pending | Phase B |
-| B8 | Bake sr-truenas-mcp into the combined agentgateway image | ▶ in progress | PR open: [staticrevolution-com/sr-agentgateway#3](https://github.com/staticrevolution-com/sr-agentgateway/pull/3). Pre-merge requires `TRUENAS_MCP_RELEASE_TOKEN` secret + Portainer stack-env cleanup. Detailed scope: §B8 below. |
+| B8 | Bake sr-truenas-mcp into the combined agentgateway image | ▶ in progress | PR open: [staticrevolution-com/sr-agentgateway#3](https://github.com/staticrevolution-com/sr-agentgateway/pull/3). **Pivoted from PAT-fetch to ghcr.io build stage** (no PAT, no rotation). Pre-merge requires one-time UI: package settings → Manage Actions access → add `sr-agentgateway` Read. Spec section §B8 below describes the original PAT approach for historical context. |
 | B8b | Bake portainer-mcp into the combined agentgateway image | ⬜ pending | Mirror B8 for portainer-mcp; final state drops the `/mnt/data-pool/apps/agentgateway/bin` shared volume entirely. Same Dockerfile pattern, separate PAT (or — if portainer-mcp-enhanced is a public release — no PAT). Track separately so B8 can land first and soak. |
 
 Update this table as items land. ⬜ = pending, ▶ = in progress, ✅ = done, ⏭ = skipped, 🚧 = blocked.
@@ -373,6 +373,8 @@ Same idea for "X path-validating handlers" claim — count `validateTrueNASPath`
 ### B8 — Bake sr-truenas-mcp into the combined agentgateway image
 
 **Repo affected**: `staticrevolution-com/sr-agentgateway` (this is *not* a `sr-truenas-mcp` source change). Captured here because the gap was surfaced during A8 verification of this project's release flow.
+
+> **Implementation pivot (post-spec):** the PR landing this work consumes the existing `ghcr.io/staticrevolution-com/sr-truenas-mcp:v1.0.1` package as a Docker build stage (mirroring `cr.agentgateway.dev/agentgateway:v1.1.0 AS agentgateway-src`), authenticated by the auto-injected `GITHUB_TOKEN` via the existing `docker/login-action` step. No PAT, no rotation. Pre-merge requirement reduces to a single one-time UI action: granting `sr-agentgateway` Read access in the package's "Manage Actions access" settings. The PAT-based design described below is preserved as historical context — read it for the analysis-of-options narrative; the actual implementation lives in [staticrevolution-com/sr-agentgateway#3](https://github.com/staticrevolution-com/sr-agentgateway/pull/3).
 
 #### Why option 3 over the alternatives
 
