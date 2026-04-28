@@ -110,9 +110,12 @@ export class ToolRegistry {
     ];
 
     for (const action of actions) {
+      // Tier tag now makes the destructive marker explicit — mirrors the
+      // tool-level destructiveHint annotation. Tier 3 (no tag) is implicitly
+      // non-destructive.
       const tierTag =
-        action.tier === SafetyTier.ConfirmWithReason ? " [requires confirm + reason]" :
-        action.tier === SafetyTier.Confirm ? " [requires confirm]" : "";
+        action.tier === SafetyTier.ConfirmWithReason ? " [destructive: requires confirm + reason]" :
+        action.tier === SafetyTier.Confirm ? " [destructive: requires confirm]" : "";
       lines.push(`  ${action.name}${tierTag} — ${action.description}`);
       const params = extractParams(action.schema);
       if (params.length > 0) {

@@ -19,7 +19,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | A7 | Memory cleanup (stale `disk_temperatures` entry) | ✅ done | Verified obsolete in deployed binary |
 | A9 | `--version` flag with embedded build SHA | ✅ done | `src/version.ts` + `src/cli.ts` `--version`/`-v` and `--help`/`-h`. `scripts/build-bundle.mjs` injects `__BUILD_VERSION__` (`<pkg.version>+<git-short-sha>[.dirty]`) via esbuild `--define`. Unbundled fallback is `"dev"`. |
 | A8 | Cut v1.0.1, deploy, drop /tmp shortcut | ✅ done | v1.0.1 tagged, GitHub release published (binary SHA `9114b23b…`). Deployed via /tmp → init → /bin-vol; /tmp wiped; subsequent restart fell through to /bin-vol cache cleanly. **Finding: GitHub-release fallback in agentgateway init is non-functional** — repo is private, init's anonymous `wget` 404s. Cache path covers normal flow, but disaster recovery (both /tmp + cache empty) needs B8. |
-| B1 | `destructiveHint` annotation | ⬜ pending | Phase B |
+| B1 | `destructiveHint` annotation | ✅ done | `TRUENAS_TOOL_ANNOTATIONS` exported from `src/index.ts` (`destructiveHint: true`, `readOnlyHint: false`, `openWorldHint: true`, `title`); passed as `annotations` arg to `server.tool()`. `listActions()` tier tags now read `[destructive: requires confirm + reason]` / `[destructive: requires confirm]` so the per-action destructive marker is explicit alongside the tool-level hint. 5 new annotation tests. |
 | B2 | UUID request IDs + opt-in keepalive | ⬜ pending | Phase B |
 | B3 | Structured stderr logging (opt-in) | ⬜ pending | Phase B |
 | B4 | CI: SBOM + Sigstore artifact attestation | ⬜ pending | Phase B |

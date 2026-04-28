@@ -5,5 +5,8 @@ coverage/
 .env
 .env.local
 
+# Claude Code session artifacts
+.claude/
+
 # Large local-only API doc dumps (~667MB) — fetched per-version from truenas.com
 docs/truenas-v*-docs/

@@ -161,20 +161,21 @@ describe("Registry safety enforcement", () => {
   });
 
   describe("Discovery", () => {
-    it("annotates tier 1 actions in listings", () => {
+    it("annotates tier 1 actions as destructive in listings", () => {
       const listing = registry.listActions("storage");
-      expect(listing).toContain("[requires confirm + reason]");
+      expect(listing).toContain("[destructive: requires confirm + reason]");
     });
 
-    it("annotates tier 2 actions in listings", () => {
+    it("annotates tier 2 actions as destructive in listings", () => {
       const listing = registry.listActions("system");
-      expect(listing).toContain("[requires confirm]");
+      expect(listing).toContain("[destructive: requires confirm]");
     });
 
     it("does not annotate tier 3 actions", () => {
       const listing = registry.listActions("storage");
-      // pool_list is tier 3, should not have annotation
+      // pool_list is tier 3, should not have any tier annotation
       const poolListLine = listing.split("\n").find((l) => l.includes("pool_list"));
+      expect(poolListLine).not.toContain("[destructive");
       expect(poolListLine).not.toContain("[requires");
     });
 

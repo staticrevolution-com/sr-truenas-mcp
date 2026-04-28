@@ -11,6 +11,20 @@ export interface ServerConfig {
   verifySsl?: boolean;
 }
 
+/**
+ * MCP ToolAnnotations on the single `truenas` tool. Per spec these are
+ * coarse-grained hints at the tool level; per-action destructiveness lives in
+ * the tier system surfaced via `listActions()`. A client honouring the spec
+ * should treat `destructiveHint: true` here as "this tool may modify state"
+ * and check the discovery output for which specific actions are destructive.
+ */
+export const TRUENAS_TOOL_ANNOTATIONS = {
+  title: "TrueNAS SCALE Manager",
+  readOnlyHint: false,
+  destructiveHint: true,
+  openWorldHint: true,
+} as const;
+
 export function createServer(config: ServerConfig): McpServer {
   const client = new TrueNASClient({
     baseUrl: config.baseUrl,
@@ -38,7 +52,9 @@ Usage:
   - category only → list available actions in that category with parameters
   - category + action → execute (pass action-specific params in 'params')
 
-Safety tiers: some actions require confirm: true (tier 2) or confirm + reason (tier 1). Discovery output shows which.
+Safety tiers: some actions require confirm: true (tier 2) or confirm + reason (tier 1). Discovery output marks destructive actions with [destructive: ...] tags.
+
+Tool-level annotation: destructiveHint: true. The annotation is coarse — most actions are read-only — but at least one action in this tool can modify or destroy data. Per-action destructiveness is shown in the discovery output.
 
 Categories: system, storage, sharing, network, account, disk, vm, app, update, certificate, alert, data_protection, filesystem, reporting, directory, service_config, audit`,
     {
@@ -67,6 +83,7 @@ Categories: system, storage, sharing, network, account, disk, vm, app, update, c
           "Required for tier 1 (high-risk) actions. Explains why the operation is being performed."
         ),
     },
+    TRUENAS_TOOL_ANNOTATIONS,
     async ({ category, action, params, reason }) => {
       // Mode 1: List categories
       if (!category || category === "help") {
