@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TrueNASClient } from "../client.js";
 import { buildRegistry } from "../tools/index.js";
-import { BLOCKED_ACTIONS, SafetyTier } from "../safety.js";
+import { ACTION_TIERS, BLOCKED_ACTIONS, SafetyTier } from "../safety.js";
 import { filterSensitiveFields } from "../filters.js";
 
 /**
@@ -23,8 +23,25 @@ describe("Integration", () => {
   const registry = makeFullRegistry();
 
   describe("Tool count", () => {
-    it("has 270 registered tools (278 minus 8 blocked)", () => {
-      expect(registry.tools.size).toBe(270);
+    it("registers every classified action except the blocked ones", () => {
+      // Self-maintaining: registry size + blocked == total classified actions.
+      // Adding an action to ACTION_TIERS without registering its handler will
+      // fail this; classifying an existing handler as Blocked drops it out.
+      expect(registry.tools.size + BLOCKED_ACTIONS.size).toBe(Object.keys(ACTION_TIERS).length);
+    });
+
+    it("registry tier breakdown matches ACTION_TIERS", () => {
+      // Counts derived from ACTION_TIERS, not hardcoded — drift-resistant.
+      const expectedByTier = new Map<SafetyTier, number>();
+      for (const tier of Object.values(ACTION_TIERS)) {
+        expectedByTier.set(tier, (expectedByTier.get(tier) ?? 0) + 1);
+      }
+      expect(expectedByTier.get(SafetyTier.Blocked)).toBe(BLOCKED_ACTIONS.size);
+      expect(
+        (expectedByTier.get(SafetyTier.ConfirmWithReason) ?? 0)
+        + (expectedByTier.get(SafetyTier.Confirm) ?? 0)
+        + (expectedByTier.get(SafetyTier.Open) ?? 0),
+      ).toBe(registry.tools.size);
     });
 
     it("has no blocked actions registered", () => {

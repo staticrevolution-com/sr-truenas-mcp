@@ -13,10 +13,11 @@ The deployed binary on TrueNAS is post-v1.0.0 master (sha256 `fa0ce982…`, mtim
 ```bash
 npm install
 npm run build          # tsc
-npm test               # vitest run (65 tests)
+npm test               # vitest run (167 tests)
 npm run type-check     # tsc --noEmit
 npm run dev            # tsc --watch
 npm run build:binary   # tsc + esbuild + pkg → dist/sr-truenas-mcp (Linux x64 binary)
+npm run audit:counts   # print structural counts (filter, tiers, validation surface)
 ```
 
 ### Standalone Binary
@@ -94,8 +95,10 @@ All handler and resource responses pass through `filterSensitiveFields()`, a 3-t
 
 Two validators in `src/validation.ts`:
 
-- **`validateTrueNASPath(path)`** — for filesystem paths. Must start with `/mnt/`, no `..`, no null bytes. Used by every filesystem-touching handler in `filesystem.ts`, `sharing.ts` (smb/nfs share `path`, iscsi extent file `path`), `replication.ts` (cloudsync/cloud_backup/rsync `path`), and `network.ts`.
-- **`validateDatasetName(name)`** — for ZFS dataset names (e.g. `tank/data`). Charset `[a-zA-Z0-9._:/-]`, max 255 chars, no `..`, no null bytes. Used by `dataset_create` (in `storage.ts`) and `replication_create` (`source_datasets[]` + `target_dataset`). `dataset_create` additionally routes `/mnt/`-prefixed input through `validateTrueNASPath` for defense in depth.
+- **`validateTrueNASPath(path)`** — for filesystem paths. Must start with `/mnt/`, no `..`, no null bytes. 23 call sites across `filesystem.ts`, `sharing.ts` (smb/nfs share `path`, iscsi extent file `path`), `replication.ts` (cloudsync/cloud_backup/rsync `path`), and `network.ts` (user `home`).
+- **`validateDatasetName(name)`** — for ZFS dataset names (e.g. `tank/data`). Charset `[a-zA-Z0-9._:/-]`, max 255 chars, no `..`, no null bytes. 3 call sites: `dataset_create` (`storage.ts`) and `replication_create` (`source_datasets[]` + `target_dataset`). `dataset_create` additionally routes `/mnt/`-prefixed input through `validateTrueNASPath` for defense in depth.
+
+Run `npm run audit:counts` to verify these numbers against the source.
 
 ## WebSocket Protocol
 
