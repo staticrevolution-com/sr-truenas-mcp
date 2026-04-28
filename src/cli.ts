@@ -2,6 +2,8 @@
 
 import { startStdio } from "./index.js";
 import { BUILD_VERSION } from "./version.js";
+import { TrueNASClient } from "./client.js";
+import { preflight, formatPreflightFailure } from "./preflight.js";
 
 // Early exits — must run before env-var validation so they work without
 // TRUENAS_URL/TRUENAS_API_KEY set.
@@ -22,7 +24,8 @@ if (args.includes("--help") || args.includes("-h")) {
       "  TRUENAS_API_KEY      API key from TrueNAS UI (Credentials -> API Keys)\n" +
       "\n" +
       "Optional environment:\n" +
-      "  TRUENAS_VERIFY_SSL   set 'false' to skip TLS verification (warns on stderr)\n" +
+      "  TRUENAS_VERIFY_SSL       set 'false' to skip TLS verification (warns on stderr)\n" +
+      "  TRUENAS_SKIP_PREFLIGHT   set '1' to bypass the startup health check\n" +
       "\n" +
       "Flags:\n" +
       "  -v, --version        print version and exit\n" +
@@ -62,7 +65,24 @@ if (baseUrl.startsWith("http://") || baseUrl.startsWith("ws://")) {
   console.error("Warning: Connecting over plaintext (no TLS). API key will be transmitted unencrypted.");
 }
 
-startStdio({ baseUrl, apiKey, verifySsl }).catch((err) => {
+async function main(): Promise<void> {
+  // Pre-flight health check — verifies WS connect + auth + a trivial read
+  // before MCP capabilities are announced. Bypassable for environments where
+  // TrueNAS may legitimately be unreachable at startup.
+  if (process.env.TRUENAS_SKIP_PREFLIGHT !== "1") {
+    const probe = new TrueNASClient({ baseUrl: baseUrl!, apiKey: apiKey!, verifySsl });
+    const result = await preflight(probe, 5_000);
+    probe.close();
+    if (!result.ok) {
+      console.error(formatPreflightFailure(result, baseUrl!));
+      process.exit(1);
+    }
+  }
+
+  await startStdio({ baseUrl: baseUrl!, apiKey: apiKey!, verifySsl });
+}
+
+main().catch((err) => {
   console.error("Failed to start TrueNAS MCP server:", err instanceof Error ? err.message : String(err));
   process.exit(1);
 });
