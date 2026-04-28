@@ -183,7 +183,7 @@ Update binary: SCP to `/tmp/sr-truenas-mcp` on TrueNAS, redeploy stack (init cop
 - SMART test initiation not available via WebSocket API. Results available through `disk.query`.
 - `dataset_set_permissions` uses `filesystem.setperm` since `pool.dataset.permission` doesn't exist in WebSocket API.
 - `config.save` requires a binary pipe — handler returns informational message directing to TrueNAS web UI.
-- `npm audit` shows transitive hono vulnerabilities (not exploitable in stdio transport).
+- `npm audit` reports 0 vulnerabilities as of B6 (transitive `hono`/`postcss` bumps via `npm audit fix`; lockfile only).
 
 
 ---
