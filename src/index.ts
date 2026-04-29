@@ -42,7 +42,7 @@ export function createServer(config: ServerConfig): McpServer {
 
   const server = new McpServer({
     name: "truenas-mcp",
-    version: "1.0.0",
+    version: "1.1.0",
     description:
       "Comprehensive MCP server for TrueNAS SCALE — 278 tools behind a single hierarchical interface",
   });
