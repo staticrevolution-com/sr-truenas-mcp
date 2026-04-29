@@ -27,7 +27,7 @@ Phase A targets v1.0.1 (security + correctness + governance). Phase B targets v1
 | B6 | `npm audit` cleanup pass | ✅ done | `npm audit fix` resolved all 3 moderate transitive vulns (`hono`, `@hono/node-server`, `postcss`) within existing semver constraints — lockfile-only change, no `package.json` movement. Now reports 0 vulns. |
 | B7 | Filter doc-sync drift gate | ✅ done | `src/__tests__/doc-sync.test.ts` — 11 tests asserting CLAUDE.md numerical claims (filter exact/suffix/allowlist, per-tier action counts, registered-tool count, in-handler `!confirm` count, validate{Path,DatasetName} call sites) match what's in source. Verified: drift detection works (flip a count → red). Counting logic mirrors `scripts/audit-counts.mjs`. |
 | B8 | Bake sr-truenas-mcp into the combined agentgateway image | ✅ done | Merged in [staticrevolution-com/sr-agentgateway#3](https://github.com/staticrevolution-com/sr-agentgateway/pull/3). New combined image SHA `daed0d0b5e15f…`; deployed agentgateway running with `/opt/sr-truenas-mcp/dist/cli.js` baked in via ghcr build stage. End-to-end MCP truenas call verified. One residual: stopped orphan `sr-agentgateway-truenas-init` container (`redeployStackGit prune:true` 500'd, same Portainer behavior as A8); cosmetic, will clean up naturally with B8b. |
-| B8b | Bake portainer-mcp into the combined agentgateway image | ▶ in progress | PR open: [staticrevolution-com/sr-agentgateway#4](https://github.com/staticrevolution-com/sr-agentgateway/pull/4). `jmrplens/portainer-mcp-enhanced` is public — anonymous curl, no PAT. Drops `portainer-mcp-init` service + the bin volume entirely; only the agentgateway service remains. Pre-merge requires nothing. Awaiting your merge call. |
+| B8b | Bake portainer-mcp into the combined agentgateway image | ✅ done | Landed via the sr-agentbrain integration cycle in `sr-agentgateway` (PR #8 / #9). Combined image now bakes portainer-mcp + sr-truenas-mcp + sr-agentbrain at build time; init sidecars and the shared bin volume are gone. Final state confirmed in the user's other session and reflected in `~/.claude/rules/mcp-reliability.md`. |
 | B8c | Inject `BUILD_VERSION` in image-mode entrypoint | ✅ done | `scripts/build-bundle.mjs` now reads `BUILD_VERSION` env first, falls back to git derivation. Dockerfile gains `ARG BUILD_VERSION` + a build stage that runs the bundle script and produces `dist/bundle.cjs`. Runtime ENTRYPOINT switches to `node dist/bundle.cjs` so `docker run … --version` reports the stamp. Release workflow passes `BUILD_VERSION="${TAG#v}+${SHORT_SHA}"` via `--build-arg`. `dist/cli.js` + `node_modules` still shipped for backward compat with sr-agentgateway's current build stage; agentgateway can swap to `dist/bundle.cjs` in its own config on next iteration. |
 
 Update this table as items land. ⬜ = pending, ▶ = in progress, ✅ = done, ⏭ = skipped, 🚧 = blocked.
@@ -642,7 +642,14 @@ A8 also surfaced **B8** (GitHub-release fallback for the init container is broke
 - Binary SHA256: `4001ce555b14c4716c0936930caf2635c723544e15287e75ff4df0fc2a6f880e`
 - `--version`: `1.1.0+2bb89d6` (verified on Crucible against the published tarball)
 - Container image: `ghcr.io/staticrevolution-com/sr-truenas-mcp:v1.1.0` + `:latest` (pushed by the docker job)
-- **Not yet deployed** to the agentgateway stack — sr-agentgateway's Dockerfile still pins `:v1.0.1` as the truenas-mcp-src stage. Bumping that pin (a one-line PR) is the next coordination step to surface v1.1.0 in production.
+
+### Production deploy (post-2026-04-29)
+
+- `sr-agentgateway` PR #11 merged as `f0582c0` (squash) — bumped the `truenas-mcp-src` build stage pin from `:v1.0.1` to `:v1.1.0`.
+- Combined image rebuilt; new SHA `sha256:468bbeaa3132…` on `:latest`.
+- Stack 1183 redeployed via Portainer GitOps webhook (the canonical path; `redeployStackGit` 500'd, stop+start cycled the container but didn't pull from ghcr — webhook URL `POST /api/stacks/webhooks/{uuid}` was the working force-pull-and-redeploy).
+- Container `StartedAt: 2026-04-29T04:33:58Z`. `/opt/sr-truenas-mcp/package.json` reports `"version": "1.1.0"`. End-to-end MCP `truenas system_version` call succeeded post-redeploy.
+- Known cosmetic: `node /opt/sr-truenas-mcp/dist/cli.js --version` still reports `dev` because agentgateway invokes the unbundled `cli.js`. The stamped `dist/bundle.cjs` is also baked into the image; pivoting the config is a separate behavior-change PR if/when runtime version reporting matters.
 
 ## What lands first
 
