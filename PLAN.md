@@ -633,6 +633,17 @@ These can be made between v1.0.1 and v1.1.0 ships:
 
 A8 also surfaced **B8** (GitHub-release fallback for the init container is broken — repo is private, anonymous `wget` 404s). Normal-flow updates remain unaffected; only disaster recovery from a fully-empty `/bin-vol` is currently impossible.
 
+## Released-binary state (post-v1.1.0, 2026-04-29)
+
+- GitHub release: <https://github.com/staticrevolution-com/sr-truenas-mcp/releases/tag/v1.1.0>
+- Tag commit: `2bb89d6` on `master` (after the B4 attestation revert)
+- Assets: `sr-truenas-mcp-linux-x64.tar.gz` + `.sha256` + `sr-truenas-mcp-linux-x64.spdx.json` + `sr-truenas-mcp-1.1.0.tgz`
+- Tarball SHA256: `c960141ea0da9b4086fcedbd14856028808f54ebac95bcb8fbce248597d7455d` (per the published `.sha256`)
+- Binary SHA256: `4001ce555b14c4716c0936930caf2635c723544e15287e75ff4df0fc2a6f880e`
+- `--version`: `1.1.0+2bb89d6` (verified on Crucible against the published tarball)
+- Container image: `ghcr.io/staticrevolution-com/sr-truenas-mcp:v1.1.0` + `:latest` (pushed by the docker job)
+- **Not yet deployed** to the agentgateway stack — sr-agentgateway's Dockerfile still pins `:v1.0.1` as the truenas-mcp-src stage. Bumping that pin (a one-line PR) is the next coordination step to surface v1.1.0 in production.
+
 ## What lands first
 
 Phase A, in this order: A1 → A2 → A3 → A4 (in three commits: A4a/b together, A4c, A4d) → A5 → A6 → A7 → A9 → A8. Each is a separate PR. Tests land with each change. Tag cut after A9 verification. Phase B follows in a single milestone.
