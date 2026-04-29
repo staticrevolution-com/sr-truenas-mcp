@@ -17,26 +17,34 @@ const REPO = resolve(HERE, "..");
 
 const pkg = JSON.parse(readFileSync(resolve(REPO, "package.json"), "utf8"));
 
-let sha = "unknown";
-try {
-  sha = execFileSync("git", ["rev-parse", "--short=7", "HEAD"], { cwd: REPO })
-    .toString()
-    .trim();
-} catch {
-  // git unavailable / not a checkout — leave "unknown"
-}
+// Prefer an explicit version stamp from the environment (Docker builds, CI
+// release workflows): the build context typically excludes `.git`, so calling
+// `git rev-parse` would otherwise return "unknown". `BUILD_VERSION` is the
+// canonical full string; if absent, derive `<pkg.version>+<sha>[.dirty]`
+// from the local git checkout, falling back to `<pkg.version>+unknown`.
+let version = process.env.BUILD_VERSION;
+if (!version) {
+  let sha = "unknown";
+  try {
+    sha = execFileSync("git", ["rev-parse", "--short=7", "HEAD"], { cwd: REPO })
+      .toString()
+      .trim();
+  } catch {
+    // git unavailable / not a checkout — leave "unknown"
+  }
 
-let dirty = "";
-try {
-  const status = execFileSync("git", ["status", "--porcelain"], { cwd: REPO })
-    .toString()
-    .trim();
-  if (status.length > 0) dirty = ".dirty";
-} catch {
-  // ignore
-}
+  let dirty = "";
+  try {
+    const status = execFileSync("git", ["status", "--porcelain"], { cwd: REPO })
+      .toString()
+      .trim();
+    if (status.length > 0) dirty = ".dirty";
+  } catch {
+    // ignore
+  }
 
-const version = `${pkg.version}+${sha}${dirty}`;
+  version = `${pkg.version}+${sha}${dirty}`;
+}
 
 await esbuild.build({
   entryPoints: [resolve(REPO, "dist/cli.js")],

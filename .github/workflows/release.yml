@@ -60,7 +60,14 @@ jobs:
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           IMAGE_LOWER=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
           TAG="${{ github.event.release.tag_name }}"
-          docker build -t "${IMAGE_LOWER}:${TAG}" -t "${IMAGE_LOWER}:latest" .
+          # Strip leading "v" from the tag for the version stamp so it
+          # matches the bundle script's natural format (1.0.1+abc1234).
+          PKG_VER="${TAG#v}"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          BUILD_VERSION="${PKG_VER}+${SHORT_SHA}"
+          docker build \
+            --build-arg "BUILD_VERSION=${BUILD_VERSION}" \
+            -t "${IMAGE_LOWER}:${TAG}" -t "${IMAGE_LOWER}:latest" .
           docker push "${IMAGE_LOWER}:${TAG}"
           docker push "${IMAGE_LOWER}:latest"
 
