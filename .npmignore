@@ -3,3 +3,9 @@ tsconfig.json
 .gitignore
 .env
 *.tsbuildinfo
+
+# Standalone-binary artifacts — shipped via GitHub Release, not npm
+dist/sr-truenas-mcp
+dist/bundle.cjs
+dist/sr-truenas-mcp-linux-x64.tar.gz
+dist/sr-truenas-mcp-linux-x64.tar.gz.sha256

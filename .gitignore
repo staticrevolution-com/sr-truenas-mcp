@@ -13,3 +13,6 @@ docs/truenas-v*-docs/
 
 # Local research scratch (not for publication)
 .research/
+
+# npm pack output
+*.tgz
