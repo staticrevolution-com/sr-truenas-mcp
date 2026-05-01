@@ -1,23 +1,24 @@
 # sr-truenas-mcp Hardening Plan
 
+> **Historical record.** This is the pre-implementation hardening plan written before the v1.0.0 public release. Numerical claims about TrueNAS API method counts and the registered-tool count reflect what was understood at planning time; final shipped numbers are documented in [`CHANGELOG.md`](./CHANGELOG.md) and asserted in `src/__tests__/doc-sync.test.ts`. Companion document: [`PLAN-bulletproofing-v1.0.1-v1.1.0.md`](./PLAN-bulletproofing-v1.0.1-v1.1.0.md).
+
 ## Context
 
 **Repo**: `staticrevolution-com/sr-truenas-mcp` (fork of `spranab/truenas-mcp`)
-**Local**: `D:\github-local\staticrevolution-com\sr-truenas-mcp`
 **Goal**: Transform a comprehensive but unguarded TrueNAS MCP server into a production-safe tool for Claude Code sessions, primarily for ZFS dataset reorganization work.
 
 **Why this change is needed**: The upstream codebase (278 actions, 15 days old, 2 commits, zero tests) has critical security gaps (raw API escape hatch, process-wide TLS disable, no runtime validation, ~40 destructive actions missing confirmation gates, unfiltered sensitive data in responses) AND is built on TrueNAS REST API v2.0, which is deprecated and being removed.
 
-**Critical API finding (confirmed from official TrueNAS docs)**: REST API v2.0 is not even documented in TrueNAS 25.10.2 — the official docs are 100% WebSocket JSON-RPC 2.0. The API has 841 methods across 92 namespaces. All 273 of spranab's REST actions map cleanly to WebSocket methods (270 clear 1:1 mappings). The API is extremely stable across versions: only 1 method removed from 25.10→27.0, 65 added. v26 adds Incus container management (25 new methods).
+**Critical API finding (confirmed from official TrueNAS docs)**: REST API v2.0 is not even documented in TrueNAS 25.10.2 — the official docs are 100% WebSocket JSON-RPC 2.0. The API has 859 methods across 92 namespaces. All 273 of spranab's REST actions map cleanly to WebSocket methods (270 clear 1:1 mappings). The API is extremely stable across versions: only 1 method removed from 25.10→27.0, 65 added. v26 adds Incus container management (25 new methods).
 
 **Design decision**: Build on WebSocket JSON-RPC 2.0. The safety hardening (tiers, validation, filtering) is transport-agnostic — it lives in the registry layer, not the client. The client rewrite and handler migration are separate phases.
 
 **API evolution (from downloaded docs)**:
 | Version | Methods | Events | Key Additions |
 |---------|---------|--------|---------------|
-| 25.10.2 | 841 | 77 | Baseline — pool (84), system (55), vm (52), iscsi (46) |
-| 26.0.0 | 920 (+62) | 77 | Incus containers (25), ZFS resource snapshots (12), web sharing (6), SED disk support |
-| 27.0.0 | 923 (+3) | 77 | disk.get_instance, nvmet.global.sessions, reporting.graphs |
+| 25.10.2 | 859 | 77 | Baseline — pool (84), system (55), vm (52), iscsi (46) |
+| 26.0.0 | 921 (+62) | 77 | Incus containers (25), ZFS resource snapshots (12), web sharing (6), SED disk support |
+| 27.0.0 | 924 (+3) | 77 | disk.get_instance, nvmet.global.sessions, reporting.graphs |
 
 **Removed across all versions**: Only `pool.ddt_prefetch` (v25→v26). Zero methods removed v26→v27.
 
@@ -369,7 +370,7 @@ Job polling: `core.get_jobs` with `[["id","=",jobId]]` filter
     "mcpServers": {
       "truenas": {
         "command": "node",
-        "args": ["D:/github-local/staticrevolution-com/sr-truenas-mcp/dist/cli.js"],
+        "args": ["/path/to/sr-truenas-mcp/dist/cli.js"],
         "env": {
           "TRUENAS_URL": "wss://truenas.local",
           "TRUENAS_API_KEY": "...",
