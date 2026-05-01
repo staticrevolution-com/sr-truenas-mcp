@@ -95,13 +95,14 @@ without a coordination window.
 
 | Version | Supported |
 |---|---|
-| 1.1.x | ✅ Active |
-| 1.0.x | ⚠️ Best-effort security fixes only |
+| 1.0.x | ✅ Active |
 | < 1.0 | ❌ Pre-release; not supported |
 
-Only the most recent minor version receives feature updates. Prior
-minor versions receive security fixes only, on a best-effort basis,
-and only if the fix is reasonably backportable.
+`1.0.x` is the first public release line and is actively maintained.
+When a future minor version (`1.1.x`, `1.2.x`, …) ships, the prior
+minor will receive security fixes only on a best-effort basis, and
+only if the fix is reasonably backportable. This table will be
+updated when that happens.
 
 ## Architectural notes for security researchers
 
