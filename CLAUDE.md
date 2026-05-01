@@ -11,6 +11,15 @@ No active roadmap — all the development work that became the v1.0.0 public rel
 
 The deployed binary on TrueNAS (sha256 `fa0ce982…`, mtime Apr 16) was built before the 2026-05-01 history rewrite, so it doesn't correspond to any commit currently in this repo. The bytes on disk are unchanged; only commit SHAs were rewritten.
 
+## Conventions for AI-tooling sessions
+
+This repo is maintained by Warren Kelly. AI tooling (Claude Code) is used as part of the development workflow; attribution of that use is handled in the README's "Development approach" section, not in individual commits or PRs.
+
+- Commits: author and committer are the human. No `Co-Authored-By` trailer for Claude. No "Generated with" footer.
+- PR descriptions and issue comments: no AI-tool self-attribution.
+- Code comments: do not annotate code as AI-generated.
+- README, CHANGELOG, release notes: AI-tooling framing is the maintainer's call, not the tool's. Do not insert it unprompted.
+
 ## Build & Test
 
 ```bash
@@ -160,7 +169,7 @@ Update binary: SCP to `/tmp/sr-truenas-mcp` on TrueNAS, redeploy stack (init cop
   "mcpServers": {
     "truenas": {
       "command": "node",
-      "args": ["D:/github-local/staticrevolution-com/sr-truenas-mcp/dist/cli.js"],
+      "args": ["/path/to/sr-truenas-mcp/dist/cli.js"],
       "env": {
         "TRUENAS_URL": "wss://truenas.local:444",
         "TRUENAS_API_KEY": "...",
