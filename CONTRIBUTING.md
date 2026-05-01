@@ -65,7 +65,9 @@ compatible — please flag this in the PR description.
   Vitest is the runner.
 - New TrueNAS actions: add the handler to the appropriate
   `src/tools/*.ts` file, classify in `src/safety.ts`, add Zod schema
-  for parameters, add a test in `src/__tests__/handlers.test.ts`.
+  for parameters, add a test under `src/__tests__/` (mirror the
+  relevant module — e.g. tier behavior in `registry.test.ts`, filter
+  shape in `filters.test.ts`, validation in `validation.test.ts`).
 - Avoid introducing new direct dependencies without discussion.
 - Keep handler logic thin — the registry handles tier checks, schema
   validation, and response filtering. Handlers should call the

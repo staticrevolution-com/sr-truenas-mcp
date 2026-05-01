@@ -16,3 +16,11 @@ docs/truenas-v*-docs/
 
 # npm pack output
 *.tgz
+
+# IDE / editor
+.idea/
+.vscode/
+
+# OS detritus
+.DS_Store
+Thumbs.db

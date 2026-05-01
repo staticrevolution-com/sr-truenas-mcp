@@ -16,6 +16,19 @@ through a single hierarchical MCP tool over WebSocket JSON-RPC 2.0.
 
 ---
 
+## Disclaimer
+
+This software is provided as-is, with no warranty. By design it performs
+destructive operations on a TrueNAS system — deleting datasets, modifying
+shares, wiping disks, applying updates — and it does so on behalf of an
+LLM acting as a privileged operator. Warren Kelly and Static Revolution
+LLC accept no liability for data loss, downtime, or other damages
+resulting from its use. Read the safety-tier system in
+[Architecture](#architecture) and test against a non-production TrueNAS
+before pointing it at anything you care about.
+
+---
+
 ## Why this exists
 
 I built this to give Claude Code and OpenClaw (an n8n-driven agent
