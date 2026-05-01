@@ -4,7 +4,7 @@ coverage/
 .git/
 .github/
 docs/
-PLAN.md
+PLAN-*.md
 *.tsbuildinfo
 .env
 .env.local

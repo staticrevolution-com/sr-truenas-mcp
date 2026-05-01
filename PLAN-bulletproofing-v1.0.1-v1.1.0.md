@@ -1,6 +1,6 @@
-# sr-truenas-mcp — Bulletproofing Plan (v1.0.1 → v1.1.0)
+# sr-truenas-mcp — Bulletproofing Plan (v1.0.1 → v1.1.0) — historical
 
-> **This is the active plan.** Historical record of the original v1.0.0 hardening journey is preserved at [`PLAN-v1.0.0.md`](./PLAN-v1.0.0.md).
+> **Historical record.** Phase A and B are ✅ shipped; Phase C is documented with forcing-functions for future revisitation. All of this work is consolidated into the public v1.0.0 release; pre-public tags `v1.0.1` and `v1.1.0` no longer exist in the repo's history. Companion historical document: [`PLAN-v1.0.0.md`](./PLAN-v1.0.0.md) (initial hardening journey).
 
 ## Implementation Status
 

@@ -48,7 +48,7 @@ A short version suitable for the README:
 | **Tests** | 211 (Vitest), 12 test files | None | 27 (Go test), 6 test files |
 | **CI** | Yes (build + test + audit) | None | Yes (build + test + cross-platform release) |
 | **License** | PolyForm Noncommercial 1.0.0 (source-available, free for non-commercial use) | MIT | GPL-3.0 |
-| **Status** | Released — v1.1.0 | Single-shot publication (2 commits, 2026-03-31) | "Research Preview — not recommended for production use" |
+| **Status** | Released — v1.0.0 | Single-shot publication (2 commits, 2026-03-31) | "Research Preview — not recommended for production use" |
 
 **When to choose which:**
 

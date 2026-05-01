@@ -37,7 +37,7 @@ curl -L \
 # Verify
 chmod +x sr-truenas-mcp
 ./sr-truenas-mcp --version
-# Expected: 1.1.0+<git-sha>
+# Expected: 1.0.0+<git-sha>
 
 # Move into PATH (optional)
 sudo mv sr-truenas-mcp /usr/local/bin/
@@ -65,7 +65,7 @@ docker run -i --rm \
   ghcr.io/staticrevolution-com/sr-truenas-mcp:latest
 ```
 
-Pin to a specific version with `:v1.1.0` instead of `:latest` for
+Pin to a specific version with `:v1.0.0` instead of `:latest` for
 reproducible deploys.
 
 ### 3. From npm (Node.js 18+)
@@ -233,7 +233,7 @@ read), prints the result to stderr, and exits because stdin is closed.
 A successful preflight looks like:
 
 ```
-sr-truenas-mcp 1.1.0+abc1234 — preflight OK
+sr-truenas-mcp 1.0.0+abc1234 — preflight OK
 ```
 
 A failed preflight prints the connection details and the underlying

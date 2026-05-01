@@ -2,11 +2,14 @@
 
 Hardened MCP server for TrueNAS SCALE. Fork of `spranab/truenas-mcp`.
 
-## Active Roadmap
+## Roadmap
 
-**Current plan: [`PLAN.md`](./PLAN.md)** — Bulletproofing v1.0.1 → v1.1.0. Implementation status table at the top of the file. Historical record of the v1.0.0 hardening journey is at [`PLAN-v1.0.0.md`](./PLAN-v1.0.0.md).
+No active roadmap — all the development work that became the v1.0.0 public release is shipped. Two historical plan documents preserve the development log:
 
-The deployed binary on TrueNAS (sha256 `fa0ce982…`, mtime Apr 16) was built before the 2026-05-01 history rewrite, so it doesn't correspond to any commit currently in this repo. The bytes on disk are unchanged; only commit SHAs were rewritten. The framing in `PLAN.md` Phase A about an "A8 governance gap" predates the rewrite and the current `v1.0.0` tag.
+- [`PLAN-v1.0.0.md`](./PLAN-v1.0.0.md) — initial hardening journey (REST → WebSocket migration, safety tiers, response filtering, validation).
+- [`PLAN-bulletproofing-v1.0.1-v1.1.0.md`](./PLAN-bulletproofing-v1.0.1-v1.1.0.md) — reliability + spec-alignment phases (formerly `PLAN.md`). Phase A and B are ✅ shipped; Phase C deferred items are documented with their forcing-functions for future revisitation.
+
+The deployed binary on TrueNAS (sha256 `fa0ce982…`, mtime Apr 16) was built before the 2026-05-01 history rewrite, so it doesn't correspond to any commit currently in this repo. The bytes on disk are unchanged; only commit SHAs were rewritten.
 
 ## Build & Test
 

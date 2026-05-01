@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Before opening a feature request, check the existing [open issues](https://github.com/staticrevolution-com/sr-truenas-mcp/issues) and [PLAN.md](../blob/master/PLAN.md) — the proposal may already be tracked.
+        Before opening a feature request, check the existing [open issues](https://github.com/staticrevolution-com/sr-truenas-mcp/issues) — the proposal may already be tracked.
 
         For larger changes (new transports, refactors, deviations from the safety model), open this as a discussion first; not every feature request fits the project direction, and a five-minute conversation here saves an hour of work later.
 

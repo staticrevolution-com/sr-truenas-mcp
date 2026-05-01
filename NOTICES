@@ -83,7 +83,7 @@ The two direct production dependencies are:
 | [`@modelcontextprotocol/sdk`](https://www.npmjs.com/package/@modelcontextprotocol/sdk) | `^1.12.1` | MIT (Anthropic, PBC) |
 | [`ws`](https://www.npmjs.com/package/ws) | `^8.18.0` | MIT (Einar Otto Stangvik) |
 
-The full transitive production dependency tree (93 packages as of v1.1.0)
+The full transitive production dependency tree (93 packages as of v1.0.0)
 consists of MIT, ISC, BSD-2-Clause, and BSD-3-Clause licensed code. None
 require source-availability or copyleft propagation. All require attribution
 preservation in distributions of derivative works.

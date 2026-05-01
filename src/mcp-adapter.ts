@@ -4,7 +4,7 @@
  * This file is the **only** runtime importer of `@modelcontextprotocol/sdk`
  * symbols (`McpServer`, `StdioServerTransport`). Other modules import
  * `McpServer` strictly as a TypeScript type. The purpose is to shrink the
- * eventual SDK-2.0 migration (Phase C-1 in PLAN.md) to a one-file change.
+ * eventual SDK-2.0 migration (Phase C-1 in PLAN-bulletproofing-v1.0.1-v1.1.0.md) to a one-file change.
  *
  * Behavior here is identical to the original inline registration in
  * `src/index.ts` — pure refactor.

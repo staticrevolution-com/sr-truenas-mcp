@@ -296,7 +296,7 @@ describe("isSensitiveKey", () => {
 describe("filter constants — counts (sanity)", () => {
   // These assertions guard against accidental shrinkage. If you're
   // intentionally adding/removing patterns, update the lower bound here
-  // *and* the count claimed in CLAUDE.md / PLAN.md (see plan item A5/B7).
+  // *and* the count claimed in CLAUDE.md / PLAN-bulletproofing-v1.0.1-v1.1.0.md (see plan item A5/B7).
   it("has at least the v1.0.1 baseline coverage", () => {
     expect(SENSITIVE_KEYS.size).toBeGreaterThanOrEqual(50);
     expect(SUFFIX_PATTERNS.length).toBeGreaterThanOrEqual(9);

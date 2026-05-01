@@ -13,7 +13,7 @@ body:
     attributes:
       label: Version
       description: Output of `sr-truenas-mcp --version`. If running from source, the git commit SHA.
-      placeholder: "1.1.0+abc1234"
+      placeholder: "1.0.0+abc1234"
     validations:
       required: true
 

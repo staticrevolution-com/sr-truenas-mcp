@@ -11,7 +11,7 @@ permissions:
   # actions/attest-sbom) are not enabled here — the feature requires either
   # a paid GitHub plan or a public repo, neither of which currently apply
   # to this org. Workflow keeps SBOM generation; attestations are deferred
-  # (B4 → ⏭ in PLAN.md). When the repo flips public, re-add `id-token:
+  # (B4 → ⏭ in PLAN-bulletproofing-v1.0.1-v1.1.0.md). When the repo flips public, re-add `id-token:
   # write` + `attestations: write` plus the corresponding steps in the
   # binary and docker jobs.
 
