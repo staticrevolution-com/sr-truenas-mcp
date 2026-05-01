@@ -7,13 +7,12 @@ on:
 permissions:
   contents: write
   packages: write
-  # NOTE: Sigstore artifact attestations (actions/attest-build-provenance,
-  # actions/attest-sbom) are not enabled here — the feature requires either
-  # a paid GitHub plan or a public repo, neither of which currently apply
-  # to this org. Workflow keeps SBOM generation; attestations are deferred
-  # (B4 → ⏭ in PLAN-bulletproofing-v1.0.1-v1.1.0.md). When the repo flips public, re-add `id-token:
-  # write` + `attestations: write` plus the corresponding steps in the
-  # binary and docker jobs.
+  id-token: write       # Sigstore OIDC token for attest-* actions
+  attestations: write   # Write build-provenance / SBOM attestations (B4)
+  # Docker image attestation is intentionally deferred to a follow-up: the
+  # current docker job uses plain `docker build`/`docker push`, which does
+  # not surface the pushed image digest. Switching to `docker buildx build
+  # --push --metadata-file=...` is the prerequisite.
 
 env:
   REGISTRY: ghcr.io
@@ -65,6 +64,17 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
 
+      - name: Attest binary tarball provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: dist/sr-truenas-mcp-linux-x64.tar.gz
+
+      - name: Attest SBOM (binds SBOM to tarball)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/sr-truenas-mcp-linux-x64.tar.gz
+          sbom-path: dist/sr-truenas-mcp-linux-x64.spdx.json
+
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -109,6 +119,11 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm pack
+      - name: Attest npm tarball provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: sr-truenas-mcp-*.tgz
+
       - name: Upload npm tarball to release
         env:
           GH_TOKEN: ${{ github.token }}
