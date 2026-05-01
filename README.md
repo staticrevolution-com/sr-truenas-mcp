@@ -476,3 +476,11 @@ agents I trust manage a NAS I rely on, and not finding one that fit.
 
 GitHub: [whasamatau](https://github.com/whasamatau) ·
 Email: `admin@staticrevolution.com`
+
+---
+
+## Acknowledgments
+
+Forked from [spranab/truenas-mcp](https://github.com/spranab/truenas-mcp).
+Hardening, the WebSocket JSON-RPC migration, and ongoing development was
+done with assistance from Anthropic's Claude.
