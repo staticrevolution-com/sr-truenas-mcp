@@ -6,7 +6,7 @@ Hardened MCP server for TrueNAS SCALE. Fork of `spranab/truenas-mcp`.
 
 **Current plan: [`PLAN.md`](./PLAN.md)** — Bulletproofing v1.0.1 → v1.1.0. Implementation status table at the top of the file. Historical record of the v1.0.0 hardening journey is at [`PLAN-v1.0.0.md`](./PLAN-v1.0.0.md).
 
-The deployed binary on TrueNAS is post-v1.0.0 master (sha256 `fa0ce982…`, mtime Apr 16) — not the v1.0.0 GitHub release. Closing that governance gap is plan item **A8**.
+The deployed binary on TrueNAS (sha256 `fa0ce982…`, mtime Apr 16) was built before the 2026-05-01 history rewrite, so it doesn't correspond to any commit currently in this repo. The bytes on disk are unchanged; only commit SHAs were rewritten. The framing in `PLAN.md` Phase A about an "A8 governance gap" predates the rewrite and the current `v1.0.0` tag.
 
 ## Build & Test
 
