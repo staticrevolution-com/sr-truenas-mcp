@@ -1,6 +1,6 @@
 # sr-truenas-mcp — Bulletproofing Plan (v1.0.1 → v1.1.0) — historical
 
-> **Historical record.** Phase A and B are ✅ shipped; Phase C is documented with forcing-functions for future revisitation. All of this work is consolidated into the public v1.0.0 release; pre-public tags `v1.0.1` and `v1.1.0` no longer exist in the repo's history. Companion historical document: [`PLAN-v1.0.0.md`](./PLAN-v1.0.0.md) (initial hardening journey).
+> **Historical bulletproofing plan.** Phase A (security + correctness, A1–A9) and Phase B (reliability + spec alignment, B1–B8c) are shipped; Phase C is deferred with documented forcing-functions. The source-code findings (1–13, 15, 19 in the findings summary) and the Phase A code work are general engineering content. Phase B8/B8b/B8c and the operational governance items (17, 18) reference the maintainer's specific deployment topology — they're preserved here as part of the development log, not as guidance for downstream users. Companion document: [`PLAN-v1.0.0.md`](./PLAN-v1.0.0.md) (initial hardening journey).
 
 ## Implementation Status
 
