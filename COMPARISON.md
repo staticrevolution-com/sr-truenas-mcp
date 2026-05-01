@@ -319,11 +319,3 @@ suspected to be wrong, but they should be re-checked before public release:
   the source. The actual token-count saving has not been measured in this
   document. If a number is needed for marketing, capture an actual MCP
   `tools/list` response from each project and compare.
-- **`sr-truenas-mcp` `package.json` license field still says `MIT`.**
-  Section 2 of the release plan switches it to PolyForm Noncommercial 1.0.0.
-  Until that lands, this document's references to the target license are
-  forward-looking.
-- **Cosmetic drift.** `src/index.ts:36-37` describes the server as
-  "278 tools behind a single hierarchical interface." The effective
-  discoverable count is 270 (tier 0 actions are silently dropped at
-  registration). Worth aligning before public release.
