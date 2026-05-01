@@ -1,0 +1,101 @@
+# NOTICES
+
+This file preserves third-party attributions required by the licenses of code
+that sr-truenas-mcp incorporates or derives from. It exists alongside, and
+does not replace, the project's primary `LICENSE` (PolyForm Noncommercial
+1.0.0).
+
+---
+
+## Upstream attribution: spranab/truenas-mcp
+
+sr-truenas-mcp is a derivative work of
+[spranab/truenas-mcp](https://github.com/spranab/truenas-mcp). The
+hierarchical-tool architecture, the action registry shape, and the original
+module layout under `src/tools/` were inherited from that project. Subsequent
+work on the fork — transport migration to WebSocket JSON-RPC 2.0, the
+4-tier safety classification and centralized enforcement, response filtering,
+path and dataset-name validation, the test suite, the CI pipeline, the
+standalone-binary build, and the deployment integration — was authored
+independently for this repository.
+
+The upstream project is licensed under the MIT License, which permits
+relicensing of derivative works under stricter terms but requires that the
+upstream copyright notice and license text be preserved in distributions of
+the derivative work. Both are reproduced verbatim below.
+
+### Upstream LICENSE (verbatim)
+
+```
+MIT License
+
+Copyright (c) 2026
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+The "Copyright (c) 2026" line above is reproduced as it appears in the
+upstream `LICENSE` file
+([source](https://github.com/spranab/truenas-mcp/blob/master/LICENSE), as of
+2026-04-29). For attribution purposes, the original author is
+**spranab** (`developer@pranab.co.in`), per the
+[upstream `package.json`](https://github.com/spranab/truenas-mcp/blob/master/package.json).
+
+### Why both licenses are referenced
+
+Because sr-truenas-mcp originates from MIT-licensed code, downstream users
+receive two overlapping sets of obligations:
+
+- The **PolyForm Noncommercial 1.0.0** license in `LICENSE` governs your
+  rights to use, modify, and distribute the project as a whole.
+- The **MIT License** above continues to apply to the inherited code from
+  spranab/truenas-mcp and requires that this notice (the spranab copyright
+  notice and MIT permission notice) be preserved in any distribution.
+
+In practice: distribute `sr-truenas-mcp` per the terms in `LICENSE`, and
+include this `NOTICES` file alongside it. Any redistribution of source or
+binaries must carry both files.
+
+---
+
+## Runtime dependencies
+
+The two direct production dependencies are:
+
+| Package | Version constraint | License |
+|---|---|---|
+| [`@modelcontextprotocol/sdk`](https://www.npmjs.com/package/@modelcontextprotocol/sdk) | `^1.12.1` | MIT (Anthropic, PBC) |
+| [`ws`](https://www.npmjs.com/package/ws) | `^8.18.0` | MIT (Einar Otto Stangvik) |
+
+The full transitive production dependency tree (93 packages as of v1.1.0)
+consists of MIT, ISC, BSD-2-Clause, and BSD-3-Clause licensed code. None
+require source-availability or copyleft propagation. All require attribution
+preservation in distributions of derivative works.
+
+When sr-truenas-mcp is installed via `npm install`, the package manager
+fetches each dependency separately and the dependency's own `LICENSE` file
+ships with its source — attribution is preserved automatically.
+
+When sr-truenas-mcp is distributed as the **standalone Linux binary**
+(`dist/sr-truenas-mcp` from `npm run build:binary`), the binary statically
+embeds bundled dependency code via esbuild + pkg, so the attribution must be
+shipped alongside the binary. The binary's source-of-truth dependency tree
+can be reproduced with `npm ls --omit=dev --all`; each dependency's license
+text is preserved in its respective `node_modules/<pkg>/LICENSE` file at
+build time.

@@ -282,7 +282,7 @@ Order matters. Land all of A1–A7, A9 on master first, then:
 3. **Deploy**:
    - Rebuild on workstation: `npm run build:binary`.
    - SCP new binary to TrueNAS `/tmp/sr-truenas-mcp` (via the existing manual path, since this is the immediate-replace channel).
-   - Trigger AgentGateway redeploy (Portainer webhook on stack 1183) so the init container picks up the new `/tmp` binary.
+   - Trigger AgentGateway redeploy (Portainer webhook on the agentgateway stack) so the init container picks up the new `/tmp` binary.
 4. **Bump fallback pin**: in `staticrevolution-com/sr-agentgateway/docker-compose.yaml`, change `TRUENAS_MCP_VERSION:-v1.0.0` → `:-v1.0.1`. Commit + push (GitOps redeploys).
 5. **Now wipe `/tmp` shortcut**: SSH to TrueNAS *only* with explicit user authorization, `rm /tmp/sr-truenas-mcp`. Trigger a redeploy. The init container should now pull from GitHub release v1.0.1 and run that binary. Verify SHA256 against the release asset.
 
@@ -421,7 +421,7 @@ ENTRYPOINT ["/app/agentgateway"]
 CMD ["-f", "/config.yaml"]
 ```
 
-Notes on path choice: **bake to `/usr/local/bin/sr-truenas-mcp`, not `/opt/mcp-bin/`.** The compose still bind-mounts `/mnt/data-pool/apps/agentgateway/bin:/opt/mcp-bin:ro` for portainer-mcp, and that mount shadows whatever the image had at `/opt/mcp-bin`. A different path keeps both binaries reachable. The `--version` line in the fetch stage is a build-time smoke that fails the build if the binary is broken.
+Notes on path choice: **bake to `/usr/local/bin/sr-truenas-mcp`, not `/opt/mcp-bin/`.** The compose still bind-mounts `/mnt/tank/apps/agentgateway/bin:/opt/mcp-bin:ro` for portainer-mcp, and that mount shadows whatever the image had at `/opt/mcp-bin`. A different path keeps both binaries reachable. The `--version` line in the fetch stage is a build-time smoke that fails the build if the binary is broken.
 
 The exact `curl | jq | curl` sequence above is the GitHub API path that works with private repos via fine-grained PAT. Cleaner alternative: `gh release download` inside the build stage (requires installing `gh` first). Pick whichever is simpler in review.
 
@@ -471,12 +471,12 @@ Rotating versions: bump the `TRUENAS_MCP_VERSION` build-arg in this workflow (on
 -    environment:
 -      - TRUENAS_MCP_VERSION=${TRUENAS_MCP_VERSION:-v1.0.1}
 -    volumes:
--      - /mnt/data-pool/apps/agentgateway/bin:/bin-vol
+-      - /mnt/tank/apps/agentgateway/bin:/bin-vol
 -      - /tmp:/host-tmp:ro
 -    restart: "no"
 ```
 
-The `/mnt/data-pool/apps/agentgateway/bin:/opt/mcp-bin:ro` volume on the agentgateway service stays as-is (still serves portainer-mcp).
+The `/mnt/tank/apps/agentgateway/bin:/opt/mcp-bin:ro` volume on the agentgateway service stays as-is (still serves portainer-mcp).
 
 **4. `config.yaml`** — change the `truenas` backend `cmd` path:
 
@@ -492,7 +492,7 @@ The `/mnt/data-pool/apps/agentgateway/bin:/opt/mcp-bin:ro` volume on the agentga
 1. **Create a fine-grained PAT** with `Contents: Read` scoped to `staticrevolution-com/sr-truenas-mcp` only. No other scopes. Owner: a service identity if available, otherwise the user.
 2. **Add it to `staticrevolution-com/sr-agentgateway` repo secrets** as `TRUENAS_MCP_RELEASE_TOKEN`.
 3. **Set an expiry reminder** for the PAT — fine-grained PATs have a max 1-year lifetime. Track in calendar / a B-row in PLAN.md if we add one for credential rotation.
-4. **Verify Portainer stack 1183 has no `TRUENAS_MCP_VERSION` stack-level env var** that would interfere. (The compose default goes away with this PR; if Portainer has it set explicitly, that value would be passed to a service that no longer reads it, which is harmless but confusing.) Inspect via Portainer API and clean up if present.
+4. **Verify Portainer the agentgateway stack has no `TRUENAS_MCP_VERSION` stack-level env var** that would interfere. (The compose default goes away with this PR; if Portainer has it set explicitly, that value would be passed to a service that no longer reads it, which is harmless but confusing.) Inspect via Portainer API and clean up if present.
 
 #### Rollout sequencing
 
@@ -500,9 +500,9 @@ The `/mnt/data-pool/apps/agentgateway/bin:/opt/mcp-bin:ro` volume on the agentga
 2. Open PR with the four file changes. CI build will fail without the secret/PAT — that's the intended forcing function.
 3. After CI green: merge to `main`.
 4. `build.yaml` workflow rebuilds `ghcr.io/...sr-agentgateway-combined:latest`. Verify in CI logs that the build-time `--version` smoke prints the expected `1.0.1+<sha>`.
-5. Portainer redeploy stack 1183 with `pullImage: true`. The agentgateway service comes up with the baked binary at `/usr/local/bin/sr-truenas-mcp`; the `truenas-mcp-init` service is gone (Portainer's `pullImage`-with-removed-service path may leave an orphan container — see `portainer-safety.md` note about manually removing orphans via dockerProxy `DELETE /containers/<orphan>` after compose-level service removal).
+5. Portainer redeploy the agentgateway stack with `pullImage: true`. The agentgateway service comes up with the baked binary at `/usr/local/bin/sr-truenas-mcp`; the `truenas-mcp-init` service is gone (Portainer's `pullImage`-with-removed-service path may leave an orphan container — see `portainer-safety.md` note about manually removing orphans via dockerProxy `DELETE /containers/<orphan>` after compose-level service removal).
 6. Verify via Portainer dockerProxy exec: `sh -c "/usr/local/bin/sr-truenas-mcp --version; ls -la /opt/mcp-bin/"`. Expect `1.0.1+<sha>` and `portainer-mcp` only in `/opt/mcp-bin`.
-7. Optional cleanup: `rm /mnt/data-pool/apps/agentgateway/bin/sr-truenas-mcp` on the host. The volume becomes a portainer-mcp-only directory. **This step needs explicit per-incident SSH authorization** (see `production-safety.md` and `authorization-scope.md`).
+7. Optional cleanup: `rm /mnt/tank/apps/agentgateway/bin/sr-truenas-mcp` on the host. The volume becomes a portainer-mcp-only directory. **This step needs explicit per-incident SSH authorization** (see `production-safety.md` and `authorization-scope.md`).
 
 #### Verification
 
@@ -575,7 +575,7 @@ Captured here for visibility, not committed:
 
 **Pre-tag checks before v1.0.1**:
 1. Run full test suite on both Node 20 LTS and Node 22 LTS.
-2. Manual smoke test against the live TrueNAS dev instance (192.168.1.235:444):
+2. Manual smoke test against the live TrueNAS dev instance (truenas.local:444):
    - `truenas({ mode: "list_categories" })` returns 17 categories minus `api`.
    - `truenas({ category: "storage", action: "pool_list" })` returns live data, no sensitive fields visible.
    - `truenas({ category: "system", action: "service_stop", service: "ssh" })` (without `confirm`) returns the new detailed warning text.
@@ -628,7 +628,7 @@ These can be made between v1.0.1 and v1.1.0 ships:
 - SHA256: `9114b23b4d83dfc515d4b36f8a7f83a5156200b23202b15937b7f517c2027b40` (matches GitHub release v1.0.1).
 - Size: 57,708,032 bytes.
 - `--version`: `1.0.1+7f19f82` (built from commit `7f19f82`).
-- Source path on host: `/mnt/data-pool/apps/agentgateway/bin/sr-truenas-mcp` (the volume mount); `/tmp/sr-truenas-mcp` no longer exists.
+- Source path on host: `/mnt/tank/apps/agentgateway/bin/sr-truenas-mcp` (the volume mount); `/tmp/sr-truenas-mcp` no longer exists.
 - Operational health: agentgateway reset cleanly through stop/start; init logged "binary already exists"; first MCP exec inside container returned the new version stamp.
 
 A8 also surfaced **B8** (GitHub-release fallback for the init container is broken — repo is private, anonymous `wget` 404s). Normal-flow updates remain unaffected; only disaster recovery from a fully-empty `/bin-vol` is currently impossible.
@@ -640,7 +640,7 @@ A8 also surfaced **B8** (GitHub-release fallback for the init container is broke
 - Assets: `sr-truenas-mcp-linux-x64.tar.gz` + `.sha256` + `sr-truenas-mcp-linux-x64.spdx.json` + `sr-truenas-mcp-1.1.0.tgz`
 - Tarball SHA256: `c960141ea0da9b4086fcedbd14856028808f54ebac95bcb8fbce248597d7455d` (per the published `.sha256`)
 - Binary SHA256: `4001ce555b14c4716c0936930caf2635c723544e15287e75ff4df0fc2a6f880e`
-- `--version`: `1.1.0+2bb89d6` (verified on Crucible against the published tarball)
+- `--version`: `1.1.0+2bb89d6` (verified against the published tarball)
 - Container image: `ghcr.io/staticrevolution-com/sr-truenas-mcp:v1.1.0` + `:latest` (pushed by the docker job)
 
 ### Production deploy (post-2026-04-29)

@@ -75,7 +75,7 @@ describe("TrueNASClient WebSocket", () => {
   beforeEach(() => {
     interceptWs();
     client = new TrueNASClient({
-      baseUrl: "https://192.168.1.235",
+      baseUrl: "https://truenas.local",
       apiKey: "test-api-key",
       verifySsl: false,
     });
@@ -184,7 +184,7 @@ describe("TrueNASClient WebSocket", () => {
     it("does NOT modify process.env.NODE_TLS_REJECT_UNAUTHORIZED", async () => {
       const before = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
       new TrueNASClient({
-        baseUrl: "https://192.168.1.235",
+        baseUrl: "https://truenas.local",
         apiKey: "test",
         verifySsl: false,
       });
@@ -195,7 +195,7 @@ describe("TrueNASClient WebSocket", () => {
   describe("URL handling", () => {
     it("converts https:// to wss:// for WebSocket", async () => {
       const c = new TrueNASClient({
-        baseUrl: "https://192.168.1.235",
+        baseUrl: "https://truenas.local",
         apiKey: "test",
       });
       await c.connect();
@@ -206,7 +206,7 @@ describe("TrueNASClient WebSocket", () => {
 
     it("converts http:// to ws://", async () => {
       const c = new TrueNASClient({
-        baseUrl: "http://192.168.1.235",
+        baseUrl: "http://truenas.local",
         apiKey: "test",
       });
       await c.connect();
@@ -539,7 +539,7 @@ describe("TrueNASClient WebSocket", () => {
       // to handshake + auth; system.info pings just accumulate as pending and
       // get cleaned up by client.close() in afterEach.
       const ka = new TrueNASClient({
-        baseUrl: "https://192.168.1.235",
+        baseUrl: "https://truenas.local",
         apiKey: "test-api-key",
         verifySsl: false,
         keepaliveIntervalMs: 30,
@@ -555,7 +555,7 @@ describe("TrueNASClient WebSocket", () => {
 
     it("stops pinging after close()", async () => {
       const ka = new TrueNASClient({
-        baseUrl: "https://192.168.1.235",
+        baseUrl: "https://truenas.local",
         apiKey: "test-api-key",
         verifySsl: false,
         keepaliveIntervalMs: 30,

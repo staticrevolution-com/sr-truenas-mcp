@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/staticrevolution-com/sr-truenas-mcp/security/policy
+    about: Please report security vulnerabilities privately by email — see SECURITY.md. Do not file public issues for security reports.
+  - name: General questions / discussion
+    url: https://github.com/staticrevolution-com/sr-truenas-mcp/discussions
+    about: For usage questions, design discussion, or anything that isn't a confirmed bug or feature request.

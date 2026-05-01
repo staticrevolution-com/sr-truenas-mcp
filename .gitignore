@@ -10,3 +10,6 @@ coverage/
 
 # Large local-only API doc dumps (~667MB) — fetched per-version from truenas.com
 docs/truenas-v*-docs/
+
+# Local research scratch (not for publication)
+.research/

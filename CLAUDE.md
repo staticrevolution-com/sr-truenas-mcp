@@ -136,7 +136,7 @@ Filter syntax: `[["field","op","value"]]`. Job polling: `core.get_jobs` with `[[
 
 ### AgentGateway (stdio binary) — production
 
-Binary at `/mnt/data-pool/apps/agentgateway/bin/sr-truenas-mcp`, mounted into the agentgateway container at `/opt/mcp-bin/sr-truenas-mcp`. Config target in `config.yaml`:
+Binary at `/mnt/tank/apps/agentgateway/bin/sr-truenas-mcp` (or wherever you mount the agentgateway data volume), mounted into the agentgateway container at `/opt/mcp-bin/sr-truenas-mcp`. Config target in `config.yaml`:
 ```yaml
 - name: truenas
   stdio:
@@ -159,7 +159,7 @@ Update binary: SCP to `/tmp/sr-truenas-mcp` on TrueNAS, redeploy stack (init cop
       "command": "node",
       "args": ["D:/github-local/staticrevolution-com/sr-truenas-mcp/dist/cli.js"],
       "env": {
-        "TRUENAS_URL": "wss://192.168.1.235:444",
+        "TRUENAS_URL": "wss://truenas.local:444",
         "TRUENAS_API_KEY": "...",
         "TRUENAS_VERIFY_SSL": "false"
       }
@@ -172,7 +172,7 @@ Update binary: SCP to `/tmp/sr-truenas-mcp` on TrueNAS, redeploy stack (init cop
 
 | Var | Required | Description |
 |-----|----------|-------------|
-| `TRUENAS_URL` | Yes | TrueNAS URL (e.g., `wss://192.168.1.235:444`) |
+| `TRUENAS_URL` | Yes | TrueNAS URL (e.g., `wss://truenas.local:444`) |
 | `TRUENAS_API_KEY` | Yes | API key from TrueNAS UI |
 | `TRUENAS_VERIFY_SSL` | No | Set `false` to skip TLS verification (warns on stderr) |
 | `TRUENAS_SKIP_PREFLIGHT` | No | Set `1` to bypass the startup health check (default: preflight runs, fails-fast on misconfig) |

@@ -371,7 +371,7 @@ Job polling: `core.get_jobs` with `[["id","=",jobId]]` filter
         "command": "node",
         "args": ["D:/github-local/staticrevolution-com/sr-truenas-mcp/dist/cli.js"],
         "env": {
-          "TRUENAS_URL": "wss://192.168.1.235",
+          "TRUENAS_URL": "wss://truenas.local",
           "TRUENAS_API_KEY": "...",
           "TRUENAS_VERIFY_SSL": "false"
         }

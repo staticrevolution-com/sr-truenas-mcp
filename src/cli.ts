@@ -21,7 +21,7 @@ if (args.includes("--help") || args.includes("-h")) {
       "from environment variables and speaks MCP over stdio.\n" +
       "\n" +
       "Required environment:\n" +
-      "  TRUENAS_URL          TrueNAS base URL (e.g. wss://192.168.1.235:444)\n" +
+      "  TRUENAS_URL          TrueNAS base URL (e.g. wss://truenas.local:444)\n" +
       "  TRUENAS_API_KEY      API key from TrueNAS UI (Credentials -> API Keys)\n" +
       "\n" +
       "Optional environment:\n" +

@@ -1,0 +1,87 @@
+name: Bug report
+description: Something isn't working as documented or expected
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please don't file security vulnerabilities here — see [SECURITY.md](../blob/master/SECURITY.md) for the private disclosure process.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `sr-truenas-mcp --version`. If running from source, the git commit SHA.
+      placeholder: "1.1.0+abc1234"
+    validations:
+      required: true
+
+  - type: input
+    id: truenas-version
+    attributes:
+      label: TrueNAS SCALE version
+      description: From the TrueNAS UI (System → General Information).
+      placeholder: "25.10.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: client
+    attributes:
+      label: MCP client
+      description: Which client are you running this server under?
+      options:
+        - Claude Code
+        - Claude Desktop
+        - VS Code MCP extension
+        - AgentGateway / similar gateway
+        - Other (describe in "Additional context")
+    validations:
+      required: true
+
+  - type: textarea
+    id: action
+    attributes:
+      label: Action invoked
+      description: |
+        Which action(s) reproduced the issue? Include parameters, with secrets redacted.
+      placeholder: |
+        truenas({
+          category: "storage",
+          action: "dataset_create",
+          name: "tank/test",
+          type: "FILESYSTEM"
+        })
+      render: json
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include error messages verbatim, plus any context the LLM client returned.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug logs
+      description: |
+        Run with `TRUENAS_LOG_LEVEL=debug` to capture structured stderr logs. Paste them here. Logs never include secrets or response bodies.
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that might help — deployment topology, network setup, recent TrueNAS changes.
