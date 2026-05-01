@@ -5,6 +5,20 @@ section](../README.md#architecture) of the README. The README's
 version is what most readers need; this one covers the implementation
 in enough detail to navigate the codebase or evaluate the design.
 
+A note on attribution before the technical content: the requirements
+that drive this architecture (classify destructive actions by
+remediation cost, fail closed, no escape hatch the LLM can route
+around, redact secrets without over-redacting benign identifiers)
+were set by the project author from a sysadmin's perspective. The
+specific patterns documented below — the four-tier scheme, the
+registry-layer enforcement, the layered response filter — were
+developed collaboratively with AI tooling (Claude Code). The
+"why X and not Y" subsections that follow describe the reasoning
+that resolved each pattern; the requirements that motivated the
+exercise are upstream of those resolutions. See the README's
+[Development approach](../README.md#development-approach) section
+for the full framing.
+
 ## Topology
 
 ```mermaid

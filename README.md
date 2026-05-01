@@ -341,53 +341,77 @@ the right choice.
 
 ## Development approach
 
-### Architectural decisions
+### Requirements I set, and the patterns that satisfied them
 
-The decisions that drove the codebase shape, and the reasoning:
+Two kinds of decisions shaped this codebase: requirements I brought
+to the project as a sysadmin, and the specific architectural patterns
+that satisfied those requirements. The distinction matters because
+the patterns were developed collaboratively with AI tooling
+(Claude Code); the requirements are mine and predate the
+implementation.
 
-**Fork rather than upstream contribution.** Spranab's repo is two commits
-on a single day in March 2026, no tests, no CI, and the project owner has
-not pushed since. The changes I needed (transport rewrite, safety
-classification, validation, response filtering, test suite) were too
-large to land as a series of PRs into a project with no review process.
-A fork preserves the inherited architecture (which is good) while letting
-the safety surface evolve at the pace of an active development cycle.
+**Strategic: fork rather than upstream contribution.** Spranab's repo
+is two commits on a single day in March 2026, no tests, no CI, no
+ongoing maintenance. The changes the project needed (transport rewrite,
+safety classification, validation, response filtering, test suite)
+were too large to land as a series of PRs into a project with no
+review process. A fork preserves the inherited architecture (which is
+good) while letting the safety surface evolve at the pace of an active
+development cycle.
 
-**WebSocket transport over REST.** Discussed in the architecture section
-above. Short version: REST API v2.0 isn't in the current TrueNAS docs,
-the iXsystems-published MCP server is wss-only with active rejection
-of unencrypted `ws://`, and the migration eliminated a whole class of
-URL-encoding bugs.
+**Strategic: WebSocket transport over REST.** REST API v2.0 isn't in
+the current TrueNAS docs; the iXsystems-published MCP server is
+wss-only with active rejection of unencrypted `ws://`. That's the
+direction signal; staying on REST would have been swimming against
+it. The migration also eliminated a whole class of URL-encoding bugs.
 
-**Four-tier safety classification.** A binary destructive/non-destructive
-gate doesn't fit when the destructive operations span "stop the SSH
-service" (recoverable in 30 seconds) through "wipe this disk" (no
-recovery). Four tiers gave me four meaningfully different remediation
-costs and let the gating mechanism scale with the danger.
+**Requirement: destructive actions must be classified by remediation
+cost, not by a binary destructive/non-destructive flag.** `service_stop`
+(recoverable in 30 seconds) and `disk_wipe` (no recovery) should not
+trigger the same confirmation. Most reads need no gate at all. The
+**four-tier scheme** (`src/safety.ts`) that satisfies this requirement
+was developed collaboratively — three or five tiers were also viable;
+four was the resolution.
 
-**Centralized enforcement at the registry layer.** Per-handler `confirm`
-checks shipped with spranab's project worked but had no fail-closed
-property. With the registry as the gate and `src/safety.ts` as the
-classification, an unclassified action cannot register, and the
-`safety-completeness` test fails CI on any drift between the
-classification and the registered surface.
+**Requirement: the safety gate must fail closed.** A new action
+shipping without a classification must not silently become callable.
+Per-handler `if (!confirm)` checks (the upstream pattern) don't have
+this property — a handler can be added without the check and nothing
+catches it. The **registry-layer enforcement pattern** that satisfies
+this — gate sits at registration, unclassified actions throw,
+`safety-completeness` test asserts no drift on every CI run — was
+developed collaboratively. Middleware, decorator, and
+configuration-driven approaches were also considered.
 
-**Removed the raw-API escape hatch entirely.** An MCP tool that lets
-the model call any TrueNAS endpoint with arbitrary params makes every
-other safety gate cosmetic. Removed; not even a tier 0 entry.
+**Requirement: no escape hatch the LLM can route around.** The
+upstream `truenas_api_call` action let the model call any TrueNAS
+endpoint with arbitrary params. With it present, every other safety
+gate becomes cosmetic. Non-negotiable: it had to be removed
+entirely — not gated, not env-flagged, not even a tier 0 entry. The
+implementation is straightforward (delete the action and its
+namespace); the requirement is the load-bearing piece.
 
-**Post-call response filtering with a layered matcher.** Pre-call
-filtering would need to know every method's parameter shape and would
-not address what surfaces in responses. Post-call filtering needs only
-to know field names. The exact + suffix + allowlist layering emerged
-because pure exact matching missed `certificate_private_key` (and
-similar flat names), and pure suffix matching like `_key$` over-redacted
-benign identifiers like `pool_key`, `id_key`, `vdev_key`.
+**Requirement: secrets must not reach the LLM context, and the
+filter must not over-redact benign identifiers.** Pre-call parameter
+filtering doesn't address response-side leakage, which is the
+dominant concern. Per-handler hand-crafted masking (the iXsystems
+approach) has the same fail-closed problem as per-handler
+`confirm` — a new handler ships with no masking. The
+**post-call layered matcher** (exact keys + suffix patterns +
+`NEVER_REDACT` allowlist) in `src/filters.ts` was the pattern that
+emerged from collaboration. The layering specifically resolves two
+real bugs: pure exact matching missed `certificate_private_key` (and
+similar flat names), and pure suffix matching like `_key$`
+over-redacted benign identifiers like `pool_key`, `id_key`,
+`vdev_key`. The allowlist won't be obvious until you hit the
+over-redaction; it took an audit pass to discover.
 
 ### Things that came out of the audit pass
 
 A few specific issues caught during a pre-release audit, illustrative
-of the kind of bugs that ship in MCP servers when nobody is looking:
+of the kind of bugs that ship in MCP servers when nobody is looking.
+The bugs were found and fixed during the collaborative implementation
+work, not by line-by-line code review on my part:
 
 - **Late-response race in the WebSocket client.** A request times out;
   the caller's promise rejects via the timer. Then the server response
@@ -422,16 +446,35 @@ project's CLAUDE.md (filter pattern counts, per-tier action counts,
 validate-call-site counts) and asserts they match what's actually in
 the source. CI fails if anyone edits `src/filters.ts` without updating
 the docs. `npm run audit:counts` produces the same numbers manually
-when developing. Stale documentation is one of the most common
-problems in homelab tooling and I wanted a forcing function rather
-than discipline.
+when developing. The requirement was "stale documentation is one of
+the most common failure modes in homelab tooling and I want a forcing
+function rather than discipline"; the specific test-driven
+implementation of that forcing function was developed collaboratively.
 
-### Tooling note
+### How the work was actually done
 
-Implementation accelerated with AI tooling (Claude Code); architectural
-decisions, security model, and review by Warren Kelly. The decisions
-above are mine; the code that implements them was written
-collaboratively and reviewed line-by-line.
+Project requirements and safety non-negotiables — destructive actions
+must be classified and gated, the system must fail closed, no escape
+hatches that route around the gates, secrets must not reach the LLM
+context — were set by me from a sysadmin's perspective. The specific
+architectural patterns that satisfy those requirements (the four-tier
+classification, registry-layer enforcement, post-call layered response
+filter) were developed collaboratively with AI tooling (Claude Code).
+Code was reviewed at the architectural and behavioral level rather
+than line-by-line; the test suite (211 tests across 12 files), the
+fail-closed registration gate, and the doc-sync CI gate exist partly
+to compensate for that review model. Architectural and behavioral
+correctness has been verified; mechanical line-level review of every
+diff has not, and that's a deliberate trade-off — the project shipped
+in 16 days instead of six months.
+
+The outcome of this trade-off is auditable: the test suite is in
+`src/__tests__/`, the safety classification is a pure data file at
+`src/safety.ts`, the response filter is a 169-line pure function at
+`src/filters.ts`, and the CI gates are in `.github/workflows/`. None
+of those are hidden behind abstractions; a reviewer who wants to
+verify any architectural claim in this README can do so against the
+source in minutes.
 
 ---
 
