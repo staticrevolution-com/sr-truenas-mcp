@@ -201,7 +201,6 @@ Update binary: SCP to `/tmp/sr-truenas-mcp` on TrueNAS, redeploy stack (init cop
 
 ---
 
-<!-- portainer-safety-ref -->
-## Portainer stack safety (global rule)
+## Portainer stack safety
 
-Stack lifecycle (create/remove containers, networks, volumes) MUST flow through Portainer stack endpoints — NEVER via `dockerProxy`. Allowed `dockerProxy` ops: GETs, `/images/create` pulls, `restart`/`start`/`stop` on existing containers, `exec`, `prune`. Lifecycle routes: `redeployStackGit`, `startStack`, `stopStack`, GitOps webhook, `POST /stacks/create/standalone/repository`. See `~/.claude/rules/portainer-safety.md`. Enforced by PreToolUse hook `portainer-guard.py`.
+Docker stack lifecycle goes through Portainer endpoints, never `dockerProxy`. Full rule: `~/.claude/rules/portainer-safety.md`.
