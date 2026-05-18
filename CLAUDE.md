@@ -9,8 +9,6 @@ No active roadmap — all the development work that became the v1.0.0 public rel
 - [`PLAN-v1.0.0.md`](./PLAN-v1.0.0.md) — initial hardening journey (REST → WebSocket migration, safety tiers, response filtering, validation).
 - [`PLAN-bulletproofing-v1.0.1-v1.1.0.md`](./PLAN-bulletproofing-v1.0.1-v1.1.0.md) — reliability + spec-alignment phases (formerly `PLAN.md`). Phase A and B are ✅ shipped; Phase C deferred items are documented with their forcing-functions for future revisitation.
 
-One open evaluation (no scheduled work): [`docs/TOOL-SURFACE-EVALUATION.md`](./docs/TOOL-SURFACE-EVALUATION.md) — dispatcher-vs-flat-tools, raised during `sr-mcp-gateway` planning; recommended position is to keep the current single-tool design.
-
 The deployed binary on TrueNAS (sha256 `fa0ce982…`, mtime Apr 16) was built before the 2026-05-01 history rewrite, so it doesn't correspond to any commit currently in this repo. The bytes on disk are unchanged; only commit SHAs were rewritten.
 
 ## Conventions for AI-tooling sessions
