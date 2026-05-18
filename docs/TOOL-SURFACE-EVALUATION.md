@@ -58,17 +58,37 @@ tools — trades a solvable RBAC gap for a worse context-window and selection-ac
 the RBAC gap is being closed in the gateway anyway.
 
 The only concrete, low-cost improvement worth considering **in this repo** is to make the
-category + tier metadata cleanly machine-readable for a consuming gateway:
+category + tier metadata cleanly machine-readable for a consuming gateway.
 
-- Confirm the `list categories` / `list actions` discovery modes return each action's `category`
-  and safety `tier` in a stable, structured shape (not just prose) — so a gateway can enumerate
-  the constrainable vocabulary without scraping descriptions.
-- If they do not already, treat that as a small, additive enhancement (no breaking change).
+**Verified 2026-05-18 (current state):** the discovery modes return **formatted text, not
+structured data**. `Registry.listCategories()` and `Registry.listActions()` in `src/registry.ts`
+build human/LLM-readable strings; per-action destructiveness is surfaced as inline `[destructive:
+…]` text tags (see the tool description in `src/mcp-adapter.ts`). The `category` and `tier`
+information is all present, but a consuming gateway would have to **parse prose** to extract it.
 
-If a future need genuinely calls for finer protocol-level schemas, a per-category tool split
-(~17 tools) is the middle ground to revisit then — but it is not justified now.
+### Follow-up item — structured discovery output (deferred)
+
+A small, additive, non-breaking enhancement: give the discovery modes a structured form so a
+consuming gateway can enumerate the constraint vocabulary without scraping text. Concretely, one
+of:
+
+- a `format: "json"` (or similar) option on the `truenas` tool's discovery modes that returns,
+  per action, `{ name, category, tier, destructive, params }`; or
+- an additional structured MCP Resource listing every action with its `category` and `tier`.
+
+**Why it matters:** `sr-mcp-gateway` (the agentgateway replacement) implements *argument-scoped
+RBAC grants* — a token can be granted the `truenas` tool restricted to e.g. `category ∈
+{storage, reporting}` or to read-only (tier-3) actions. Building and validating those constraints
+is far cleaner against structured metadata than against parsed prose.
+
+**When to do it:** not now, and not blocking. It becomes relevant at **`sr-mcp-gateway` Phase C
+(Auth & RBAC)**. Fold it into that Phase C work — at which point the exact shape the gateway
+wants is known. Until then the gateway can be handed the category/tier vocabulary manually. A
+per-category tool split (~17 tools) remains the heavier middle-ground option if finer
+protocol-level schemas are ever genuinely needed; it is not justified now.
 
 ## Decision
 
-Leave the dispatcher design as-is. Revisit only if the discovery modes turn out **not** to expose
-`category`/`tier` structurally — in which case open a small additive enhancement to do so.
+Keep the dispatcher design as-is — no tool-surface redesign. One follow-up is on record (above):
+add a structured discovery output for category/tier metadata, deferred to `sr-mcp-gateway`
+Phase C. There is **no mandatory work** in this repo arising from this evaluation.
