@@ -11,6 +11,8 @@ No active roadmap — all the development work that became the v1.0.0 public rel
 
 One open evaluation (no scheduled work): [`docs/TOOL-SURFACE-EVALUATION.md`](./docs/TOOL-SURFACE-EVALUATION.md) — dispatcher-vs-flat-tools, raised during `sr-mcp-gateway` planning; recommended position is to keep the current single-tool design.
 
+Live-deploy findings from TrueNAS 26.0.0-BETA.1 (2026-06-12): [`docs/FIELD-REPORT-2026-06-12-truenas-26.md`](./docs/FIELD-REPORT-2026-06-12-truenas-26.md) — three bugs fixed in source (middlewared error-detail propagation, job-wait on filesystem write handlers, execute-mode discovery errors); deferred follow-ups recorded there (26.0 compatibility sweep, job-method audit, deploying the fixed binary).
+
 The deployed binary on TrueNAS (sha256 `fa0ce982…`, mtime Apr 16) was built before the 2026-05-01 history rewrite, so it doesn't correspond to any commit currently in this repo. The bytes on disk are unchanged; only commit SHAs were rewritten.
 
 ## Conventions for AI-tooling sessions
@@ -27,7 +29,7 @@ This repo is maintained by Warren Kelly. AI tooling (Claude Code) is used as par
 ```bash
 npm install
 npm run build          # tsc
-npm test               # vitest run (211 tests)
+npm test               # vitest run (226 tests)
 npm run type-check     # tsc --noEmit
 npm run dev            # tsc --watch
 npm run build:binary   # tsc + esbuild + pkg → dist/sr-truenas-mcp (Linux x64 binary)
@@ -147,6 +149,8 @@ Filter syntax: `[["field","op","value"]]`. Job polling: `core.get_jobs` with `[[
 ## Deployment
 
 **Production runs only as a stdio child of AgentGateway** (see "AgentGateway (stdio binary)" below). The "direct node" path is a developer convenience for testing the MCP locally against a TrueNAS — not a production deployment.
+
+Production endpoint specifics (UI/API ports, websocket URL, API-key location) live in the private homelab docs, not in this public repo. Note that TrueNAS 26.0 removes REST v2 entirely (`/api/v2.0/*` 404s) — the WebSocket JSON-RPC API is the only API surface there.
 
 ### AgentGateway (stdio binary) — production
 

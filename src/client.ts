@@ -48,11 +48,46 @@ interface DDPRequest {
   params: unknown[];
 }
 
+/**
+ * Error payload on a DDP response. Two shapes arrive in practice:
+ * - generic DDP: `{ code, message }`
+ * - middlewared (TrueNAS SCALE 25.x/26.x): `{ error: <errno>, errname,
+ *   type, reason, trace, extra }` — no `message` field at all.
+ */
+interface DDPError {
+  code?: number;
+  message?: string;
+  error?: number;
+  errname?: string;
+  type?: string | null;
+  reason?: string | null;
+  trace?: unknown;
+  extra?: unknown;
+}
+
 interface DDPResponse {
   id: string;
   msg: "result" | "failed";
   result?: unknown;
-  error?: { code?: number; message?: string; trace?: string };
+  error?: DDPError;
+}
+
+/**
+ * Build the error message surfaced to callers from a DDP error payload.
+ * Prefers middlewared's `errname` + first line of `reason` (e.g.
+ * "[EZFS_EXISTS] cannot create 'tank/x': dataset already exists") over the
+ * generic `message`; "API call failed" only when the payload has neither.
+ * Exported for tests.
+ */
+export function formatDDPError(error?: DDPError): string {
+  const reason = typeof error?.reason === "string" ? error.reason.trim().split("\n")[0] : "";
+  let detail = reason || error?.message || "API call failed";
+  if (error?.errname && !detail.includes(error.errname)) {
+    detail = `[${error.errname}] ${detail}`;
+  }
+  const code = error?.code ?? error?.error;
+  const codeSuffix = typeof code === "number" ? ` (code ${code})` : "";
+  return `TrueNAS API error: ${detail}${codeSuffix}`;
 }
 
 interface PendingRequest {
@@ -278,9 +313,7 @@ export class TrueNASClient {
         if (!msg.id) return; // Ignore messages without IDs (ping, sub events)
 
         if (msg.msg === "failed" || msg.error) {
-          const errMsg = msg.error?.message || "API call failed";
-          const code = msg.error?.code ? ` (code ${msg.error.code})` : "";
-          this.settlePending(msg.id, "reject", new Error(`TrueNAS API error: ${errMsg}${code}`));
+          this.settlePending(msg.id, "reject", new Error(formatDDPError(msg.error)));
         } else {
           this.settlePending(msg.id, "resolve", msg.result);
         }

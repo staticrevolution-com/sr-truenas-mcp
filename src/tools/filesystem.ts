@@ -3,6 +3,18 @@ import { z } from "zod";
 import { TrueNASClient } from "../client.js";
 import { validateTrueNASPath } from "../validation.js";
 
+/**
+ * filesystem.chown / filesystem.setperm / filesystem.setacl are @job methods
+ * in middlewared — the immediate return value is a job id, not an outcome.
+ * Wait for the job so a failed job surfaces as an error instead of the
+ * enqueue being reported as success.
+ */
+async function awaitJobResult(client: TrueNASClient, raw: unknown): Promise<unknown> {
+  if (typeof raw !== "number") return raw;
+  const job = await client.waitForJob(raw);
+  return job.result ?? { job_id: raw, state: job.state };
+}
+
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
   // Filesystem
@@ -46,6 +58,16 @@ export function register(server: McpServer, client: TrueNASClient): void {
     async ({ path, mode }) => {
       const validPath = validateTrueNASPath(path);
       const result = await client.call("filesystem.mkdir", [{ path: validPath, options: { mode } }]);
+      // mkdir can report success while the parent dataset is unmounted,
+      // leaving nothing on disk (observed live on 26.0.0-BETA.1) — stat back.
+      try {
+        await client.call("filesystem.stat", [validPath]);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `filesystem.mkdir reported success but post-write verification failed — '${validPath}' does not exist (is the parent dataset mounted?): ${detail}`
+        );
+      }
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -69,7 +91,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (uid !== undefined) body.uid = uid;
       if (gid !== undefined) body.gid = gid;
       body.options = { recursive, traverse, stripacl };
-      const result = await client.call("filesystem.setperm", [body]);
+      const result = await awaitJobResult(client, await client.call("filesystem.setperm", [body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -114,7 +136,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (uid !== undefined) body.uid = uid;
       if (gid !== undefined) body.gid = gid;
       if (options !== undefined) body.options = options;
-      const result = await client.call("filesystem.setacl", [body]);
+      const result = await awaitJobResult(client, await client.call("filesystem.setacl", [body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -135,7 +157,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (uid !== undefined) body.uid = uid;
       if (gid !== undefined) body.gid = gid;
       body.options = { recursive, traverse };
-      const result = await client.call("filesystem.chown", [body]);
+      const result = await awaitJobResult(client, await client.call("filesystem.chown", [body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
