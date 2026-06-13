@@ -32,7 +32,7 @@ export function createServer(config: ServerConfig): McpServer {
 
   return createMcpServer({
     name: "truenas-mcp",
-    version: "1.0.0",
+    version: "1.0.1",
     description:
       "Hardened MCP server for TrueNAS SCALE — 270 safety-tiered actions behind a single hierarchical interface",
     registry: buildRegistry(client),
