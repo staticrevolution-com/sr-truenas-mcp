@@ -11,9 +11,9 @@ No active roadmap — all the development work that became the v1.0.0 public rel
 
 One open evaluation (no scheduled work): [`docs/TOOL-SURFACE-EVALUATION.md`](./docs/TOOL-SURFACE-EVALUATION.md) — dispatcher-vs-flat-tools, raised during `sr-mcp-gateway` planning; recommended position is to keep the current single-tool design.
 
-Live-deploy findings from TrueNAS 26.0.0-BETA.1 (2026-06-12): [`docs/FIELD-REPORT-2026-06-12-truenas-26.md`](./docs/FIELD-REPORT-2026-06-12-truenas-26.md) — three bugs fixed in source (middlewared error-detail propagation, job-wait on filesystem write handlers, execute-mode discovery errors); deferred follow-ups recorded there (26.0 compatibility sweep, job-method audit, deploying the fixed binary).
+Live-deploy findings from TrueNAS 26.0.0-BETA.1 (2026-06-12): [`docs/FIELD-REPORT-2026-06-12-truenas-26.md`](./docs/FIELD-REPORT-2026-06-12-truenas-26.md) — three bugs (middlewared error-detail propagation, job-wait on filesystem write handlers, execute-mode discovery errors), fixed and shipped in **v1.1.1**, deployed to production 2026-06-13. Remaining deferred follow-ups: the 26.0 compatibility sweep and a job-method audit across all handlers.
 
-The deployed binary on TrueNAS (sha256 `fa0ce982…`, mtime Apr 16) was built before the 2026-05-01 history rewrite, so it doesn't correspond to any commit currently in this repo. The bytes on disk are unchanged; only commit SHAs were rewritten.
+**Production deployment (current).** This server federates through `sr-mcp-gateway` (which replaced the decommissioned `sr-agentgateway`) as a **container-strategy backend** running `ghcr.io/staticrevolution-com/sr-truenas-mcp:v1.1.1`. Version-numbering note: v1.1.1 sits above an orphaned `:v1.1.0` image — a pre-2026-05-01-history-rewrite artifact with no backing git tag that production was previously pinned to. The field-report fixes were first cut as v1.0.1, then renumbered to v1.1.1 to sort above it; v1.0.1 is withdrawn. Full backstory in CHANGELOG `[1.1.1]`. **Loose end:** the orphaned `:v1.1.0` and `:v1.0.1` GHCR image tags are pending deletion (needs a token with `delete:packages`).
 
 ## Conventions for AI-tooling sessions
 
