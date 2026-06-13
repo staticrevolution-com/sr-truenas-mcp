@@ -5,6 +5,52 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-06-13
+
+Bug-fix release. Findings from a live deploy against **TrueNAS
+26.0.0-BETA.1** (REST v2 fully removed in 26.0; WebSocket JSON-RPC is the
+only API surface there). No new actions, no schema changes, no breaking
+changes. Triage record in
+[`docs/FIELD-REPORT-2026-06-12-truenas-26.md`](./docs/FIELD-REPORT-2026-06-12-truenas-26.md).
+
+### Fixed
+
+- **API errors no longer collapse to "API call failed."** middlewared's
+  DDP error payload carries `errname` + a multiline `reason` + an errno,
+  not the generic `message`/`code` shape the client expected — so every
+  middleware error rendered as the bare fallback string (a live
+  `EZFS_EXISTS` was lost this way). New `formatDDPError()` in
+  `src/client.ts` surfaces `errname` + the first line of `reason`; the
+  legacy `message`/`code` shape still works.
+- **Filesystem write handlers no longer report false success.**
+  `filesystem.chown`, `filesystem.setperm`, and `filesystem.setacl` are
+  `@job` methods; the handlers returned the enqueued job id as success
+  without waiting, so a failed job was invisible. They now wait for the
+  job (`waitForJob`) and surface its terminal state — a FAILED/ABORTED
+  job is an error, not a success.
+- **`filesystem_mkdir` verifies the directory exists after creating it**
+  (`filesystem.stat` back), and errors with a post-write-verification
+  message when it is absent — the case where a write "succeeds" against
+  an unmounted parent dataset and lands nowhere.
+- **`dataset_create` warns when the new dataset is left unmounted.**
+  26.0.0-BETA.1 was observed creating the ZFS dataset, then failing
+  before mount; the handler now stats the returned mountpoint and appends
+  an explicit created-but-unmounted warning instead of a clean success.
+- **Discovery errors no longer render an empty action list.** `execute()`
+  with an unknown category produced `Available: ` with nothing after it.
+  Unknown categories now list the valid categories; unknown actions in a
+  valid category list that category's actions.
+
+### Changed
+
+- **Category-list discovery output points callers at `system_version`,**
+  since TrueNAS API behavior differs across major versions.
+- **226 tests** (was 211) across 13 test files — adds
+  `handler-verification.test.ts` (job-wait + post-write verification) and
+  `formatDDPError` / execute-mode discovery-error coverage.
+
+[1.0.1]: https://github.com/staticrevolution-com/sr-truenas-mcp/releases/tag/v1.0.1
+
 ## [1.0.0] — 2026-05-01
 
 First public release. Forked from

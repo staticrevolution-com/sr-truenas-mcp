@@ -35,7 +35,7 @@ body:
         - Claude Code
         - Claude Desktop
         - VS Code MCP extension
-        - AgentGateway / similar gateway
+        - MCP gateway (sr-mcp-gateway / similar)
         - Other (describe in "Additional context")
     validations:
       required: true

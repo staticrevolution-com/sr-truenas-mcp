@@ -185,4 +185,23 @@ describe("Registry safety enforcement", () => {
       expect(categories).not.toContain("Raw API");
     });
   });
+
+  describe("Execute-mode discovery errors", () => {
+    it("unknown category lists valid categories, not an empty action list", async () => {
+      // "pool" is a plausible guess but not a category (pool_* lives in
+      // "storage") — the old code rendered "Available: " with nothing after.
+      const result = await registry.execute("pool", "pool_frobnicate", {});
+      const err = (result as { error: string }).error;
+      expect(err).toContain('Unknown category "pool"');
+      expect(err).toContain("storage");
+      expect(err).not.toMatch(/Available: *$/);
+    });
+
+    it("unknown action in a valid category lists that category's actions", async () => {
+      const result = await registry.execute("storage", "pool_frobnicate", {});
+      const err = (result as { error: string }).error;
+      expect(err).toContain('Unknown action "pool_frobnicate"');
+      expect(err).toContain("pool_list");
+    });
+  });
 });

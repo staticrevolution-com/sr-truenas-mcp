@@ -360,7 +360,21 @@ export function register(server: McpServer, client: TrueNASClient): void {
         if (params[field] !== undefined) body[field] = params[field];
       }
       const result = await client.call("pool.dataset.create", [body]);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      // Post-create verification: a dataset can be created but left unmounted
+      // (observed live on 26.0.0-BETA.1) — stat the mountpoint and warn rather
+      // than report a clean success the caller can't write to.
+      let warning = "";
+      const ds = result as { mountpoint?: unknown } | null;
+      if (ds && typeof ds.mountpoint === "string" && ds.mountpoint.startsWith("/mnt/")) {
+        try {
+          await client.call("filesystem.stat", [ds.mountpoint]);
+        } catch {
+          warning =
+            `\n\nWARNING: dataset was created but its mountpoint ${ds.mountpoint} is not present on disk — ` +
+            `the dataset is likely unmounted. Verify with dataset_get before writing to it.`;
+        }
+      }
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) + warning }] };
     },
   );
 

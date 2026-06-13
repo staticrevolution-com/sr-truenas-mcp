@@ -187,21 +187,27 @@ Add to `.vscode/mcp.json` (per-project) or your user MCP config:
 }
 ```
 
-### AgentGateway (or other MCP gateway)
+### Behind an MCP gateway
 
-Add as a stdio target. Example AgentGateway `config.yaml` snippet:
+Run the standalone binary (or the Docker image) as a stdio backend of
+your MCP gateway, supplying the three env vars to the backend's
+environment. The Static Revolution stack federates this MCP through
+[`sr-mcp-gateway`](https://github.com/staticrevolution-com/sr-mcp-gateway),
+which registers backends at runtime (process or container strategy) via
+its admin API/GUI rather than a static config file — see that project's
+`docs/CONFIGURATION.md`.
+
+Gateways that take a static stdio target instead use roughly:
 
 ```yaml
-backends:
-  - mcp:
-      targets:
-        - name: truenas
-          stdio:
-            cmd: /usr/local/bin/sr-truenas-mcp
-            env:
-              TRUENAS_URL: "${TRUENAS_URL}"
-              TRUENAS_API_KEY: "${TRUENAS_API_KEY}"
-              TRUENAS_VERIFY_SSL: "${TRUENAS_VERIFY_SSL}"
+# generic stdio-target example (exact schema is gateway-specific)
+- name: truenas
+  stdio:
+    cmd: /usr/local/bin/sr-truenas-mcp
+    env:
+      TRUENAS_URL: "${TRUENAS_URL}"
+      TRUENAS_API_KEY: "${TRUENAS_API_KEY}"
+      TRUENAS_VERIFY_SSL: "${TRUENAS_VERIFY_SSL}"
 ```
 
 ## TLS and certificate handling

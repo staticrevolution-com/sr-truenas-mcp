@@ -149,26 +149,28 @@ invalid character or pattern. Dataset names match
 
 ### Repeated `Streamable HTTP error: invalid session ID header`
 
-You're running behind AgentGateway and the gateway is in **stateful
-mode**. AgentGateway v1.1 has no session GC, returns HTTP 400
-instead of 404 on stale sessions, and the MCP client cannot recover
-gracefully.
+You're running behind an MCP gateway that tracks sessions in a
+**stateful mode** with no/buggy session garbage collection (the
+now-decommissioned AgentGateway v1.1 was a known case — it returned
+HTTP 400 instead of 404 on stale sessions, which the MCP client
+couldn't recover from gracefully).
 
-Fix: set `statefulMode: stateless` on the agentgateway MCP backend.
-Per-call session creation; stale-session class disappears entirely.
-
-This is a deployment-side fix, not a sr-truenas-mcp issue.
+Fix: run the gateway's MCP backend in a per-call / stateless session
+mode if it offers one, so each call gets a fresh session and the
+stale-session class disappears. This is a deployment-side fix, not a
+sr-truenas-mcp issue.
 
 ### Long latency on first call after idle
 
-If your deployment uses stateless mode (recommended), every MCP call
-spawns a fresh WebSocket connection and authenticates. Cold-start
-overhead is typically 100–300ms. This is the expected trade-off.
+If the gateway runs the backend **per request** (fresh spawn per
+call), every MCP call opens a new WebSocket and authenticates;
+cold-start overhead is typically 100–300ms. That's the expected
+trade-off of a stateless backend.
 
-If you genuinely need persistent connections (specific deployment),
-use `TRUENAS_KEEPALIVE_INTERVAL_MS=30000` to keep the connection
-warm. Note: this only helps if the connection actually persists; in
-stateless gateway mode it has no effect.
+If the backend is **persistent / supervised** (e.g. `sr-mcp-gateway`),
+the WebSocket lives across calls — set `TRUENAS_KEEPALIVE_INTERVAL_MS=30000`
+to keep it warm. Note this only helps when the connection actually
+persists; with a per-request spawn it has no effect.
 
 ## Diagnostic commands
 

@@ -24,7 +24,7 @@ COPY --from=build /app/dist/ dist/
 ENV NODE_ENV=production
 # Default entrypoint runs the bundled CJS so `docker run ... --version`
 # reports the baked stamp. dist/cli.js is also present for consumers that
-# pull the image as a build stage (e.g. sr-agentgateway's combined image)
-# and prefer the modular entry — but `node dist/bundle.cjs` is the canonical
-# path post-B8c.
+# pull the image as a build stage (e.g. a gateway that bakes backends in at
+# build time) and prefer the modular entry — but `node dist/bundle.cjs` is
+# the canonical path post-B8c.
 ENTRYPOINT ["node", "dist/bundle.cjs"]

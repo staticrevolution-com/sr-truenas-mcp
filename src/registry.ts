@@ -77,7 +77,8 @@ export class ToolRegistry {
 
     const lines: string[] = [
       `TrueNAS MCP — ${this.tools.size} tools across ${counts.size} categories\n`,
-      "Call with a category to see available actions, or with category + action + params to execute.\n",
+      "Call with a category to see available actions, or with category + action + params to execute.",
+      "Not sure what release the target system runs? system_version (category system) reports it — API behavior differs across TrueNAS major versions.\n",
       "Categories:",
     ];
 
@@ -145,8 +146,20 @@ export class ToolRegistry {
   ): Promise<unknown> {
     const tool = this.tools.get(action);
     if (!tool) {
-      // Try to find closest match in category
+      // Unknown category first — otherwise the "Available:" list below is
+      // built from a category filter that matches nothing and renders empty.
+      if (!CATEGORIES[category]) {
+        const available = Object.keys(CATEGORIES).join(", ");
+        return {
+          error: `Unknown category "${category}". Available categories: ${available}`,
+        };
+      }
       const catTools = [...this.tools.values()].filter((t) => t.category === category);
+      if (catTools.length === 0) {
+        return {
+          error: `Unknown action "${action}". Category "${category}" has no registered actions — call with just the category to discover others.`,
+        };
+      }
       const names = catTools.map((t) => t.name).join(", ");
       return {
         error: `Unknown action "${action}" in category "${category}". Available: ${names}`,

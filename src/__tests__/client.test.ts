@@ -44,7 +44,36 @@ vi.mock("ws", () => ({
 }));
 
 // Import after mock is set up
-const { TrueNASClient, WebSocketSendError, ReconnectAborted, nextPollDelay, INITIAL_POLL_DELAY_MS, MAX_POLL_DELAY_MS } = await import("../client.js");
+const { TrueNASClient, WebSocketSendError, ReconnectAborted, nextPollDelay, INITIAL_POLL_DELAY_MS, MAX_POLL_DELAY_MS, formatDDPError } = await import("../client.js");
+
+describe("formatDDPError", () => {
+  it("uses first line of middlewared reason", () => {
+    expect(
+      formatDDPError({
+        error: 2,
+        errname: "ENOENT",
+        reason: "[ENOENT] Path /mnt/tank/missing not found\ntraceback line",
+      })
+    ).toBe("TrueNAS API error: [ENOENT] Path /mnt/tank/missing not found (code 2)");
+  });
+
+  it("prefixes errname when reason does not already include it", () => {
+    expect(formatDDPError({ errname: "EINVAL", reason: "bad parameter" })).toBe(
+      "TrueNAS API error: [EINVAL] bad parameter"
+    );
+  });
+
+  it("keeps legacy code/message shape working", () => {
+    expect(formatDDPError({ code: 403, message: "Permission denied" })).toBe(
+      "TrueNAS API error: Permission denied (code 403)"
+    );
+  });
+
+  it("falls back to generic message when payload is empty", () => {
+    expect(formatDDPError(undefined)).toBe("TrueNAS API error: API call failed");
+    expect(formatDDPError({})).toBe("TrueNAS API error: API call failed");
+  });
+});
 
 describe("TrueNASClient WebSocket", () => {
   let client: InstanceType<typeof TrueNASClient>;
@@ -167,6 +196,33 @@ describe("TrueNASClient WebSocket", () => {
       });
 
       await expect(callPromise).rejects.toThrow("Permission denied");
+    });
+
+    it("surfaces middlewared errname + reason instead of 'API call failed'", async () => {
+      await client.connect();
+
+      const callPromise = client.call("pool.dataset.create", [{ name: "tank/x" }]);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const callMsg = JSON.parse(mockWs.sentMessages[2]);
+      // middlewared (TrueNAS 25.x/26.x) error shape: errno in `error`,
+      // `errname` + multiline `reason`, and no `message`/`code` fields.
+      mockWs.serverSend({
+        id: callMsg.id,
+        msg: "result",
+        error: {
+          error: 17,
+          errname: "EZFS_EXISTS",
+          type: null,
+          reason: "[EZFS_EXISTS] cannot create 'tank/x': dataset already exists\nsecond line of detail",
+          trace: { class: "CallError", formatted: "...", frames: [] },
+          extra: null,
+        },
+      });
+
+      await expect(callPromise).rejects.toThrow(
+        "[EZFS_EXISTS] cannot create 'tank/x': dataset already exists"
+      );
     });
 
     it("rejects on timeout", async () => {

@@ -3,8 +3,8 @@
 **Status:** Evaluation / not scheduled · **Opened:** 2026-05-18 · **Origin:** `sr-mcp-gateway` planning
 
 A tracking note (GitHub Issues are disabled on this repo). Records a design question raised while
-planning `sr-mcp-gateway` — the standalone MCP gateway being built to replace `sr-agentgateway`.
-No change is committed here; this is the analysis and the recommended position.
+planning `sr-mcp-gateway` — the standalone MCP gateway that has since replaced `sr-agentgateway`
+in production. No change is committed here; this is the analysis and the recommended position.
 
 ## The question
 
