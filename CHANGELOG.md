@@ -5,13 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.1] — 2026-06-13
+## [1.1.1] — 2026-06-13
 
-Bug-fix release. Findings from a live deploy against **TrueNAS
-26.0.0-BETA.1** (REST v2 fully removed in 26.0; WebSocket JSON-RPC is the
-only API surface there). No new actions, no schema changes, no breaking
-changes. Triage record in
+Bug-fix release carrying the TrueNAS 26.0.0-BETA.1 field-report fixes
+(identical code to the withdrawn 1.0.1 below). No new actions, no schema
+changes, no breaking changes. Triage record in
 [`docs/FIELD-REPORT-2026-06-12-truenas-26.md`](./docs/FIELD-REPORT-2026-06-12-truenas-26.md).
+
+**Version note.** This is numbered 1.1.1, not 1.0.1, to sit above the
+`1.1.0` image still running in production. Backstory: the 2026-05-01
+history rewrite consolidated the old internal `1.0.0`/`1.0.1`/`1.1.0`
+tags into the single public `1.0.0`, but the old GHCR images outlived
+their git tags — the production gateway was still pinned to an orphaned
+`:1.1.0` (pre-fix code, same 270-action / 17-category surface as current
+`master`). A patch cut from `master` as `1.0.1` would therefore have been
+numerically *below* what was deployed. `1.1.1` is the same fixes
+renumbered to a clean monotonic bump over the deployed `1.1.0`; current
+`master` is a superset of that orphaned `1.1.0` (its full feature surface
+plus these fixes), so deploying `1.1.1` adds the fixes with zero surface
+loss. The `1.0.1` tag/release is withdrawn (see below).
 
 ### Fixed
 
@@ -48,6 +60,17 @@ changes. Triage record in
 - **226 tests** (was 211) across 13 test files — adds
   `handler-verification.test.ts` (job-wait + post-write verification) and
   `formatDDPError` / execute-mode discovery-error coverage.
+
+[1.1.1]: https://github.com/staticrevolution-com/sr-truenas-mcp/releases/tag/v1.1.1
+
+## [1.0.1] — 2026-06-13 — *withdrawn, superseded by [1.1.1]*
+
+Originally cut as the field-report bug-fix release before it was
+discovered that production was running an orphaned `1.1.0` image (see the
+1.1.1 version note above). Re-released unchanged as **1.1.1** so the
+version sorts above the deployed `1.1.0`. Do not deploy `1.0.1` — it is
+numerically below production and exists only as historical record. The
+code is identical to 1.1.1.
 
 [1.0.1]: https://github.com/staticrevolution-com/sr-truenas-mcp/releases/tag/v1.0.1
 
