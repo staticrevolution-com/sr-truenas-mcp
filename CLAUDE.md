@@ -38,7 +38,7 @@ npm run audit:counts   # print structural counts (filter, tiers, validation surf
 
 ### Standalone Binary
 
-`npm run build:binary` produces a self-contained Linux x64 ELF binary at `dist/sr-truenas-mcp` (~55MB). Embeds Node.js 20 runtime via esbuild bundling + @yao-pkg/pkg. Used for AgentGateway stdio deployment.
+`npm run build:binary` produces a self-contained Linux x64 ELF binary at `dist/sr-truenas-mcp` (~55MB). Embeds Node.js 20 runtime via esbuild bundling + @yao-pkg/pkg. Used as the stdio backend for an MCP gateway (the `sr-mcp-gateway` process-strategy backend) — see Deployment.
 
 The bundle step (`scripts/build-bundle.mjs`) injects `__BUILD_VERSION__` (`<pkg.version>+<git-short-sha>[.dirty]`) via esbuild `--define`. The binary then exposes it through `--version`/`-v`, so the deployed artifact identifies itself without sha256-detective work. Direct `node dist/cli.js` (no bundle step) reports `dev`.
 
@@ -148,26 +148,17 @@ Filter syntax: `[["field","op","value"]]`. Job polling: `core.get_jobs` with `[[
 
 ## Deployment
 
-**Production runs only as a stdio child of AgentGateway** (see "AgentGateway (stdio binary)" below). The "direct node" path is a developer convenience for testing the MCP locally against a TrueNAS — not a production deployment.
+**Production federates this MCP behind `sr-mcp-gateway`** (Static Revolution's own MCP gateway, now in production — it replaced `sr-agentgateway`, which has been decommissioned). The "direct node" path is a developer convenience for testing the MCP locally against a TrueNAS — not a production deployment.
 
 Production endpoint specifics (UI/API ports, websocket URL, API-key location) live in the private homelab docs, not in this public repo. Note that TrueNAS 26.0 removes REST v2 entirely (`/api/v2.0/*` 404s) — the WebSocket JSON-RPC API is the only API surface there.
 
-### AgentGateway (stdio binary) — production
+### sr-mcp-gateway — production
 
-Binary at `/mnt/tank/apps/agentgateway/bin/sr-truenas-mcp` (or wherever you mount the agentgateway data volume), mounted into the agentgateway container at `/opt/mcp-bin/sr-truenas-mcp`. Config target in `config.yaml`:
-```yaml
-- name: truenas
-  stdio:
-    cmd: /opt/mcp-bin/sr-truenas-mcp
-    env:
-      TRUENAS_URL: "${TRUENAS_URL}"
-      TRUENAS_API_KEY: "${TRUENAS_API_KEY}"
-      TRUENAS_VERIFY_SSL: "${TRUENAS_VERIFY_SSL}"
-```
+Unlike the old agentgateway (which baked backends into a combined image at build time), `sr-mcp-gateway` treats backends as **runtime data**: a backend is registered through the gateway's admin API/GUI and supervised as a long-lived **process** or **container** child, with its env (`TRUENAS_URL`, `TRUENAS_API_KEY`, `TRUENAS_VERIFY_SSL`) stored encrypted-at-rest in the gateway. This repo ships both artifacts a backend needs — the standalone Linux binary (process strategy) and the GHCR Docker image (container strategy); pick whichever the gateway backend is configured for. The exact registration (strategy, command/image, env) lives in `sr-mcp-gateway`'s config and its [`docs/CONFIGURATION.md`](../sr-mcp-gateway/docs/CONFIGURATION.md) / [`docs/ADMINISTRATION.md`](../sr-mcp-gateway/docs/ADMINISTRATION.md), not here.
 
-Binary install pipeline lives in `staticrevolution-com/sr-agentgateway/docker-compose.yaml` (`truenas-mcp-init`). Source priority on stack restart: host `/tmp/sr-truenas-mcp` → existing `/bin-vol` cache → GitHub release tarball pinned to `${TRUENAS_MCP_VERSION:-v1.0.0}`. The `/tmp` shortcut is the immediate-replace channel during dev; tagged releases are the canonical production version.
+Because the backend is supervised long-lived rather than spawned per request (as agentgateway's stateless stdio mode did), the WebSocket to TrueNAS persists across calls — so the persistent-mode `TRUENAS_KEEPALIVE_INTERVAL_MS` knob can be worth enabling here, where under agentgateway it was dead weight.
 
-Update binary: SCP to `/tmp/sr-truenas-mcp` on TrueNAS, redeploy stack (init copies from `/tmp`). After deploy, verify via `dockerProxy → exec sr-truenas-mcp --version` against the agentgateway container.
+Update: publish a new tagged release (CI builds the binary tarball + GHCR image), then point the gateway backend at the new version and let the supervisor restart it. After deploy, verify the running version with `sr-truenas-mcp --version` (process strategy: exec in the gateway host/container; container strategy: `dockerProxy → exec` against the backend container).
 
 ### Claude Code (direct node) — dev only
 ```json
@@ -195,7 +186,7 @@ Update binary: SCP to `/tmp/sr-truenas-mcp` on TrueNAS, redeploy stack (init cop
 | `TRUENAS_VERIFY_SSL` | No | Set `false` to skip TLS verification (warns on stderr) |
 | `TRUENAS_SKIP_PREFLIGHT` | No | Set `1` to bypass the startup health check (default: preflight runs, fails-fast on misconfig) |
 | `TRUENAS_LOG_LEVEL` | No | `error` (default) / `warn` / `info` / `debug`. Emits JSON-line structured logs to stderr. Never includes params or response bodies. |
-| `TRUENAS_KEEPALIVE_INTERVAL_MS` | No | Milliseconds between idle `system.info` pings (default `0` = disabled). Useful only for persistent-mode deploys; AgentGateway's stateless mode tears down sessions per request. |
+| `TRUENAS_KEEPALIVE_INTERVAL_MS` | No | Milliseconds between idle `system.info` pings (default `0` = disabled). Useful for persistent-mode deploys where the backend (and its WebSocket) is held open across calls — e.g. an `sr-mcp-gateway` supervised backend. A stateless per-request gateway spawn tears the session down anyway, making it dead weight there. |
 
 ## Known Limitations
 

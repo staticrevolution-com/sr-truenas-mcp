@@ -115,11 +115,14 @@ Milliseconds between idle `system.info` pings to the TrueNAS
 WebSocket. Useful only for **persistent-mode deploys** where the
 WebSocket lives across many MCP requests.
 
-The default deployment pattern (AgentGateway in stateless mode) tears
-down the WebSocket per request, so keepalive is unnecessary and
-disabled by default. Set to a positive value (typically 30000–60000)
-only if you have specific evidence of idle-disconnect issues in your
-deployment topology.
+Whether it helps depends on how your gateway runs the backend. A
+**stateless, per-request** gateway spawns a fresh backend (and a fresh
+WebSocket) for each call and tears it down after, so keepalive is
+pointless — hence the `0` default. A **persistent / supervised**
+backend (e.g. an `sr-mcp-gateway` process- or container-strategy
+backend) holds the WebSocket open across calls, so a positive value
+(typically 30000–60000) can prevent idle disconnects. Set it only with
+evidence of idle-disconnect issues in your topology.
 
 The keepalive timer is `unref`'d so it never holds the process open
 on its own.

@@ -23,8 +23,9 @@ export interface TrueNASClientConfig {
   /**
    * Periodic `system.info` ping interval, in milliseconds. Default `0`
    * (disabled). Useful only for persistent-mode deploys where the same
-   * WebSocket is held open across long idle gaps; AgentGateway's stateless
-   * mode tears down sessions per request, so this is dead weight there.
+   * WebSocket is held open across long idle gaps (e.g. a supervised
+   * sr-mcp-gateway backend); a stateless per-request gateway spawn tears
+   * the session down anyway, so this is dead weight there.
    * Can be set via `TRUENAS_KEEPALIVE_INTERVAL_MS`.
    */
   keepaliveIntervalMs?: number;

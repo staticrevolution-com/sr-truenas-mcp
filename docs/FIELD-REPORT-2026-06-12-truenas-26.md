@@ -91,10 +91,13 @@ categories; unknown action in a valid category lists that category's actions; th
    deliberately document "returns a job ID"). Audit all 270 actions and decide per action
    whether to wait, poll, or keep returning the id — the deliberate cases should say so in
    their descriptions.
-3. **Deploy the fixes.** These fixes exist in source only; the deployed binary on TrueNAS
-   predates them. Ship via the normal channel: tagged release → `truenas-mcp-init` pipeline
-   (`sr-agentgateway/docker-compose.yaml`), or the `/tmp/sr-truenas-mcp` immediate-replace
-   path during dev. Verify with `sr-truenas-mcp --version` after deploy.
+3. **Deploy the fixes (v1.0.1).** These fixes exist in source only; the deployed binary
+   predates them. Ship via the normal channel: cut the `v1.0.1` tagged release (CI builds
+   the binary tarball + GHCR image), then point the `sr-mcp-gateway` truenas backend at the
+   new version and let the supervisor restart it. (Production now federates via
+   `sr-mcp-gateway`, which replaced the decommissioned `sr-agentgateway` — backends are
+   runtime-registered, not baked into a combined image.) Verify with `sr-truenas-mcp
+   --version` after deploy.
 
 Structured discovery output (machine-readable category/tier metadata) remains tracked
 separately in [`TOOL-SURFACE-EVALUATION.md`](./TOOL-SURFACE-EVALUATION.md) — deferred to
