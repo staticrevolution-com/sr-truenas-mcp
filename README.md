@@ -342,7 +342,7 @@ Short version (full detail in [`COMPARISON.md`](COMPARISON.md)):
 | **Response filtering** | Centralized 3-layer | None | Per-handler hand-crafted masking |
 | **Tests / CI** | 226 / yes | 0 / no | 27 / yes |
 | **License** | PolyForm-NC 1.0.0 | MIT | GPL-3.0 |
-| **Status** | v1.0.1 | Single-shot publication (2 commits) | "Research Preview" |
+| **Status** | v1.1.1 | Single-shot publication (2 commits) | "Research Preview" |
 
 Each project optimizes for different things. The official version has
 better wizard-style UX and ships cross-platform binaries (macOS / Windows
