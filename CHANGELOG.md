@@ -50,6 +50,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   copying `HOST_MODEL` from older docs hit `[EINVAL] cpu_mode: ...`. The
   handlers now normalize `_`→`-` (and upper-case) before the call, and the
   field description shows the hyphenated values.
+- **`dataset_set_permissions` works again.** It routed to `filesystem.setperm`
+  (an `@job` method) but sent the bare dataset name `tank/data` as `path`
+  (setperm needs the on-disk `/mnt/tank/data`), forwarded `user`/`group`/`acl`
+  fields the strict model rejects, never validated the path, and didn't await
+  the job — so a failure read as success. It now mirrors
+  `filesystem_set_permissions`: resolve the mountpoint, validate, send only
+  `{path, mode, uid, gid, options}`, and await the job. (The 2026-06-12
+  field-report job-wait fix had missed this second `filesystem.setperm` site.)
+- **`replication_restore` validates `target_dataset`** via `validateDatasetName`
+  like every other dataset-bearing handler (it was the one gap).
+- **`vm_display_uri` no longer builds a dead options object** or sends
+  `{ protocol: undefined }`; it passes a clean options object.
+- **`alertservice_test` strips the server-managed `id`** from the fetched
+  service before calling the strict `alertservice.test` (which rejects it).
 
 ### Added
 
@@ -69,9 +83,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   including the DISK create-a-zvol fields (`create_zvol`, `zvol_name`,
   `zvol_volsize`) and noting that `dtype` is supplied top-level, not inside
   `attributes`.
-- **Tests**: confirm-strip pipeline tests (`integration.test.ts`), nine VM
-  payload-shaping tests (`vm-payload-shaping.test.ts`), and end-to-end
-  response-filter tests (`response-filter-pipeline.test.ts`). 242 tests total.
+- **`vm_update` mirrors `vm_create`'s constraints** on `vcpus`/`cores`/
+  `threads`/`memory` (`.int().min(...)`), so zero/negative/fractional values
+  are caught at the client boundary instead of upstream.
+- **Long-running `@job` actions return a structured descriptor**, not a bare
+  job-id number: `replication_run`, `cloudsync_run`, `cloud_backup_run`,
+  `update_apply`, `disk_wipe`, and `pool_scrub` (START) now return
+  `{ job_id, state, note }` (via `describeAsyncJob`) so the asynchronous,
+  outcome-not-yet-known nature is explicit. Quick `@job` writes still await.
+- **Unknown params are dropped centrally.** Registry validation switched from
+  `.passthrough()` to `.strip()`, so any key not in a handler's schema is
+  removed before dispatch — generalizing the `confirm`/`reason` strip to the
+  whole stray-key class (which otherwise reaches strict pydantic models as
+  `[EINVAL] ... Extra inputs are not permitted`). The now-redundant
+  `system_general_update` field allowlist (a `.passthrough()` workaround) was
+  removed.
+- **Safety-tier consistency.** iSCSI `*_create`/`*_update` are now tier-2
+  (confirm) like SMB/NFS share creates (an extent provisions block storage),
+  and the `*_run` family is uniformly tier-2 (`replication_run`,
+  `cloud_backup_run`, `rsync_task_run`, `snapshot_task_run` joined
+  `cloudsync_run`/`cronjob_run`). Tier counts: 93 tier-2 / 157 tier-3.
+- **`awaitJobResult` / `describeAsyncJob` extracted** to `src/job-utils.ts`
+  (shared by `filesystem.ts`, `storage.ts`, `replication.ts`, `network.ts`,
+  `alert.ts`).
+- **Tests**: confirm-strip + unknown-key strip pipeline tests
+  (`integration.test.ts`), nine VM payload-shaping tests
+  (`vm-payload-shaping.test.ts`), and end-to-end response-filter tests
+  (`response-filter-pipeline.test.ts`). 242 tests total.
 
 ## [1.1.1] — 2026-06-13
 

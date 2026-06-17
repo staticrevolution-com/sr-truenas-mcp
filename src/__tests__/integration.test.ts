@@ -385,18 +385,9 @@ describe("Integration", () => {
     });
 
     describe("system_general_update", () => {
-      it("rejects unknown field via handler-level allowlist", async () => {
-        // Tier-2: needs confirm so the tier gate doesn't short-circuit.
-        // Handler runs; throws on unknown key before client.call().
-        await expect(
-          registry.execute("system", "system_general_update", {
-            confirm: true,
-            ui_port: 8080,
-            malicious_field: "x",
-          }),
-        ).rejects.toThrow(/Unknown field/i);
-      });
-
+      // Unknown-field handling is now centralized in the registry's .strip()
+      // (covered in "Confirm-gate param leak" below), not a per-handler
+      // allowlist.
       it("rejects ui_port out of range", async () => {
         const result = await registry.execute("system", "system_general_update", {
           confirm: true,
@@ -512,6 +503,22 @@ describe("Integration", () => {
       expect(text).toContain("DESTRUCTIVE");
       // Gate fired before dispatch — nothing was forwarded upstream.
       expect(calls).toHaveLength(0);
+    });
+
+    it("strips any unknown param (registry .strip()) so it never reaches upstream", async () => {
+      const { registry, calls } = makeSpyRegistry();
+      await registry.execute("system", "system_general_update", {
+        confirm: true,
+        ui_port: 8080,
+        malicious_field: "x",
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe("system.general.update");
+      const body = calls[0].params[0] as Record<string, unknown>;
+      expect(body.ui_port).toBe(8080);
+      expect("malicious_field" in body).toBe(false);
+      expect("confirm" in body).toBe(false);
     });
   });
 });

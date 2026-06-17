@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
 import { validateDatasetName, validateTrueNASPath } from "../validation.js";
+import { awaitJobResult, describeAsyncJob } from "../job-utils.js";
 
 // Union of all VDEV types accepted by pool.create across roles. TrueNAS
 // rejects illegal type/role combinations server-side (e.g. RAIDZ in a log
@@ -205,7 +206,9 @@ export function register(server: McpServer, client: TrueNASClient): void {
       action: z.enum(["START", "STOP", "PAUSE"]).describe("Scrub action"),
     },
     async ({ name, action }) => {
-      const result = await client.call("pool.scrub.scrub", [name, action]);
+      // pool.scrub.scrub START is a long-running @job; describe it rather than
+      // blocking (STOP/PAUSE return synchronously and pass through unchanged).
+      const result = describeAsyncJob(await client.call("pool.scrub.scrub", [name, action]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -433,15 +436,12 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "dataset_set_permissions",
-    "Set UNIX permissions on a dataset",
+    "Set UNIX permissions/ownership on a dataset (routes through filesystem.setperm against the dataset's mountpoint)",
     {
-      id: z.string().describe("Dataset name/path (e.g. 'tank/data')"),
+      id: z.string().describe("Dataset name (e.g. 'tank/data') or its /mnt/ path"),
       mode: z.string().optional().describe("UNIX permission mode (e.g. '755')"),
       uid: z.number().optional().describe("Owner user ID"),
       gid: z.number().optional().describe("Owner group ID"),
-      user: z.string().optional().describe("Owner username"),
-      group: z.string().optional().describe("Owner group name"),
-      acl: z.array(z.record(z.string(), z.unknown())).optional().describe("ACL entries"),
       options: z
         .object({
           recursive: z.boolean().optional().describe("Apply recursively"),
@@ -451,13 +451,20 @@ export function register(server: McpServer, client: TrueNASClient): void {
         .optional()
         .describe("Permission options"),
     },
-    async ({ id, ...props }) => {
-      const body: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(props)) {
-        if (value !== undefined) body[key] = value;
-      }
-      body.path = id; // filesystem.setperm expects path in body
-      const result = await client.call("filesystem.setperm", [body]);
+    async ({ id, mode, uid, gid, options }) => {
+      // filesystem.setperm operates on an on-disk path, not a ZFS dataset name,
+      // and is an @job method. Resolve the dataset to its default mountpoint
+      // (/mnt/<dataset>), validate, send only setperm-accepted fields, and wait
+      // for the job so a failure isn't reported as success. Ownership by name
+      // and ACLs are not setperm inputs — use uid/gid and filesystem_set_acl.
+      const path = id.startsWith("/mnt/") ? id : `/mnt/${id}`;
+      const validPath = validateTrueNASPath(path);
+      const body: Record<string, unknown> = { path: validPath };
+      if (mode !== undefined) body.mode = mode;
+      if (uid !== undefined) body.uid = uid;
+      if (gid !== undefined) body.gid = gid;
+      if (options !== undefined) body.options = options;
+      const result = await awaitJobResult(client, await client.call("filesystem.setperm", [body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );

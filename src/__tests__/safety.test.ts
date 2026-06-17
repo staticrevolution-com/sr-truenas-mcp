@@ -102,11 +102,13 @@ describe("Safety tier map", () => {
     }
   });
 
-  it("tier 2 count is in expected range (60-80)", () => {
+  it("tier 2 count is in expected range (60-110)", () => {
+    // Loose sanity guard; the exact count is enforced against CLAUDE.md by the
+    // doc-sync drift gate.
     const tier2 = Object.entries(ACTION_TIERS)
       .filter(([, tier]) => tier === SafetyTier.Confirm);
     expect(tier2.length).toBeGreaterThanOrEqual(60);
-    expect(tier2.length).toBeLessThanOrEqual(90);
+    expect(tier2.length).toBeLessThanOrEqual(110);
   });
 
   it("tier map has 278 total entries (all actions classified)", () => {

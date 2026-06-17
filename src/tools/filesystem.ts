@@ -2,18 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
 import { validateTrueNASPath } from "../validation.js";
-
-/**
- * filesystem.chown / filesystem.setperm / filesystem.setacl are @job methods
- * in middlewared — the immediate return value is a job id, not an outcome.
- * Wait for the job so a failed job surfaces as an error instead of the
- * enqueue being reported as success.
- */
-async function awaitJobResult(client: TrueNASClient, raw: unknown): Promise<unknown> {
-  if (typeof raw !== "number") return raw;
-  const job = await client.waitForJob(raw);
-  return job.result ?? { job_id: raw, state: job.state };
-}
+import { awaitJobResult } from "../job-utils.js";
 
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------

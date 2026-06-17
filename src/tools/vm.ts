@@ -110,10 +110,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
         .optional()
         .describe("New name for the VM (letters, digits, and underscores only — no hyphens or spaces)"),
       description: z.string().optional().describe("New description"),
-      vcpus: z.number().optional().describe("Number of virtual CPUs"),
-      cores: z.number().optional().describe("Number of cores per virtual CPU"),
-      threads: z.number().optional().describe("Number of threads per core"),
-      memory: z.number().optional().describe("Memory in MiB"),
+      vcpus: z.number().int().min(1).max(64).optional().describe("Number of virtual CPUs (1-64)"),
+      cores: z.number().int().min(1).optional().describe("Number of cores per virtual CPU"),
+      threads: z.number().int().min(1).optional().describe("Number of threads per core"),
+      memory: z.number().int().min(256).optional().describe("Memory in MiB (minimum 256)"),
       bootloader: z.enum(["UEFI", "UEFI_CSM"]).optional().describe("Bootloader type"),
       autostart: z.boolean().optional().describe("Whether to start the VM automatically on boot"),
       time: z.enum(["LOCAL", "UTC"]).optional().describe("System time setting for the VM"),
@@ -360,10 +360,12 @@ export function register(server: McpServer, client: TrueNASClient): void {
       protocol: z.string().optional().describe("Protocol to use (http or https)"),
     },
     async ({ id, host, protocol }) => {
-      const body: Record<string, unknown> = {};
-      if (host !== undefined) body.host = host;
-      if (protocol !== undefined) body.protocol = protocol;
-      const result = await client.call("vm.get_display_web_uri", [id, host ?? "", { protocol }]);
+      // vm.get_display_web_uri(id, host, options) — empty host means "use the
+      // request host". Only include protocol when provided so we don't send
+      // { protocol: undefined }.
+      const options: Record<string, unknown> = {};
+      if (protocol !== undefined) options.protocol = protocol;
+      const result = await client.call("vm.get_display_web_uri", [id, host ?? "", options]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

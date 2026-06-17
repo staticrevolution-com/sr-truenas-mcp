@@ -299,10 +299,14 @@ export class ToolRegistry {
       handlerParams = withoutConfirm;
     }
 
-    // Runtime Zod validation
+    // Runtime Zod validation. `.strip()` (Zod's default) drops any key not in
+    // the handler's schema, so a stray/unknown param can't ride into the
+    // upstream call and trip its strict pydantic model
+    // ("[EINVAL] ... Extra inputs are not permitted"). This generalizes the
+    // confirm/reason strip above to the whole unknown-key class.
     if (Object.keys(tool.schema).length > 0) {
       const zodShape = tool.schema as z.ZodRawShape;
-      const result = z.object(zodShape).passthrough().safeParse(handlerParams);
+      const result = z.object(zodShape).strip().safeParse(handlerParams);
       if (!result.success) {
         const issues = result.error.issues
           .map((i) => `${i.path.join(".")}: ${i.message}`)

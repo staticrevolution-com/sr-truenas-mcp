@@ -78,8 +78,8 @@ Single MCP tool (`truenas`) with hierarchical discovery: 270 active actions acro
 |------|------|-------|---------|
 | 0 — Blocked | Never registered | 8 | `system_reboot`, `truenas_api_call`, `cronjob_create` |
 | 1 — Confirm+Reason | `confirm: true` + `reason: "string"` | 20 | `pool_export`, `disk_wipe`, `dataset_delete`, `user_create`, `ssh_config_update` |
-| 2 — Confirm | `confirm: true` | 81 | `service_stop`, `snapshot_delete`, `smb_share_create`, `cloudsync_update` |
-| 3 — Open | None | 169 | All reads, safe queries |
+| 2 — Confirm | `confirm: true` | 93 | `service_stop`, `snapshot_delete`, `smb_share_create`, `iscsi_extent_create`, `replication_run` |
+| 3 — Open | None | 157 | All reads, safe queries |
 
 Full tier assignments in `src/safety.ts`. 32 handlers also have in-handler `confirm` checks as defense-in-depth.
 
@@ -109,12 +109,14 @@ The LLM receives the warning as a normal tool response, presents it to the user,
 
 All handler and resource responses pass through `filterSensitiveFields()`, a 3-tier matcher: 57 exact keys (e.g. `password`, `privatekey`, `unixhash`, `salt`, `bindpw`, `recovery_codes`), 9 suffix patterns (`_password$`, `_token$`, `_secret$`, `_passphrase$`, `_seed$`, `_private_key$`, `_credentials$`, `_pin$`, `_passwd$`), and a 15-entry `NEVER_REDACT` allowlist that preserves benign `*_key` identifiers (`id_key`, `pool_key`, `vdev_key`, `device_key`), password-policy descriptors (`password_disabled`, `last_password_change`, `ssh_password_enabled`, …), and public-key material (`public_key`, `sshpubkey`, `authorized_keys`). Allowlist wins over both exact and suffix.
 
+Handlers serialize their payload into `content[].text` *before* the registry sees it, so the registry's `filterToolResult` re-parses each JSON text block, runs `filterSensitiveFields` over the parsed data, and re-serializes (non-JSON text — confirm-gate warnings — passes through). Resource handlers filter the raw data before stringifying, so they redact directly.
+
 ### Path & Dataset-Name Validation
 
 Two validators in `src/validation.ts`:
 
-- **`validateTrueNASPath(path)`** — for filesystem paths. Must start with `/mnt/`, no `..`, no null bytes. 23 call sites across `filesystem.ts`, `sharing.ts` (smb/nfs share `path`, iscsi extent file `path`), `replication.ts` (cloudsync/cloud_backup/rsync `path`), and `network.ts` (user `home`).
-- **`validateDatasetName(name)`** — for ZFS dataset names (e.g. `tank/data`). Charset `[a-zA-Z0-9._:/-]`, max 255 chars, no `..`, no null bytes. 3 call sites: `dataset_create` (`storage.ts`) and `replication_create` (`source_datasets[]` + `target_dataset`). `dataset_create` additionally routes `/mnt/`-prefixed input through `validateTrueNASPath` for defense in depth.
+- **`validateTrueNASPath(path)`** — for filesystem paths. Must start with `/mnt/`, no `..`, no null bytes. 24 call sites across `filesystem.ts`, `sharing.ts` (smb/nfs share `path`, iscsi extent file `path`), `replication.ts` (cloudsync/cloud_backup/rsync `path`), `network.ts` (user `home`), and `storage.ts` (`dataset_set_permissions` mountpoint).
+- **`validateDatasetName(name)`** — for ZFS dataset names (e.g. `tank/data`). Charset `[a-zA-Z0-9._:/-]`, max 255 chars, no `..`, no null bytes. 4 call sites: `dataset_create` (`storage.ts`), `replication_create` (`source_datasets[]` + `target_dataset`), and `replication_restore` (`target_dataset`). `dataset_create` additionally routes `/mnt/`-prefixed input through `validateTrueNASPath` for defense in depth.
 
 Run `npm run audit:counts` to verify these numbers against the source.
 

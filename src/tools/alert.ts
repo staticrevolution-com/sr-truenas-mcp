@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
+import { describeAsyncJob } from "../job-utils.js";
 
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
@@ -174,10 +175,12 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.number().describe("ID of the alert service to test"),
     },
     async ({ id }) => {
-      // alertservice.test expects a full config object, not an ID.
-      // Fetch the existing service config, then pass it to test.
+      // alertservice.test expects a config object, not an ID. Fetch the
+      // existing service, then strip server-managed keys (id) that the strict
+      // test model rejects with "Extra inputs are not permitted".
       const svc = await client.call("alertservice.get_instance", [id]) as Record<string, unknown>;
-      const result = await client.call("alertservice.test", [svc]);
+      const { id: _id, ...config } = svc;
+      const result = await client.call("alertservice.test", [config]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -390,7 +393,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "Update aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.call("update.run", [{ reboot }]);
+      // update.run is a long-running @job (and may reboot); describe it.
+      const result = describeAsyncJob(await client.call("update.run", [{ reboot }]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
