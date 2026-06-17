@@ -5,7 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.2] — 2026-06-17
+
+Bug-fix + hardening release. Closes a response-filter bypass that leaked
+secrets in tool-call responses, makes the `confirm` gate satisfiable for
+create/update actions, corrects `vm_device` `dtype` nesting and several other
+forwarding bugs (incl. a broken `dataset_set_permissions`), and tightens safety
+tiers and unknown-key handling. No removed actions; tier counts shift to 93
+tier-2 / 157 tier-3. Verified against TrueNAS-26.0.0-BETA.1.
 
 ### Security
 
@@ -167,6 +174,7 @@ loss. The `1.0.1` tag/release is withdrawn (see below).
   `handler-verification.test.ts` (job-wait + post-write verification) and
   `formatDDPError` / execute-mode discovery-error coverage.
 
+[1.1.2]: https://github.com/staticrevolution-com/sr-truenas-mcp/releases/tag/v1.1.2
 [1.1.1]: https://github.com/staticrevolution-com/sr-truenas-mcp/releases/tag/v1.1.1
 
 ## [1.0.1] — 2026-06-13 — *withdrawn, superseded by [1.1.1]*
