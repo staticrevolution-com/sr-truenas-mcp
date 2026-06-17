@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Sensitive fields are now redacted from action (tool-call) responses.** The
+  response filter ran over the MCP envelope, but every action handler
+  serialized its payload into `content[].text` with `JSON.stringify` *before*
+  the registry filtered it — so sensitive keys sat inside an opaque string and
+  shipped through unredacted (a VM display `password` was observed in cleartext
+  via a live `vm_list` against production). `registry.execute` now re-parses
+  each JSON text block, filters it, and re-serializes; non-JSON text (e.g.
+  confirm-gate warnings) is untouched. Resource reads were already filtered
+  correctly. Adds end-to-end pipeline coverage (`response-filter-pipeline.test.ts`)
+  — the prior filter tests only exercised the matcher in isolation, which is
+  why the bypass went unnoticed.
+
 ### Fixed
 
 - **The confirm gate is satisfiable again for create/update actions.** The
@@ -55,8 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   including the DISK create-a-zvol fields (`create_zvol`, `zvol_name`,
   `zvol_volsize`) and noting that `dtype` is supplied top-level, not inside
   `attributes`.
-- **Tests**: confirm-strip pipeline tests (`integration.test.ts`) and nine VM
-  payload-shaping tests (`vm-payload-shaping.test.ts`).
+- **Tests**: confirm-strip pipeline tests (`integration.test.ts`), nine VM
+  payload-shaping tests (`vm-payload-shaping.test.ts`), and end-to-end
+  response-filter tests (`response-filter-pipeline.test.ts`). 242 tests total.
 
 ## [1.1.1] — 2026-06-13
 

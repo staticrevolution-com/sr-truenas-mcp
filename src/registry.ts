@@ -12,6 +12,60 @@ import { z } from "zod";
 import { ACTION_TIERS, SafetyTier, BLOCKED_ACTIONS, getActionTier } from "./safety.js";
 import { filterSensitiveFields } from "./filters.js";
 
+/**
+ * Filter an MCP tool result before returning it to the client.
+ *
+ * Handlers serialize their payload into `content[].text` via `JSON.stringify`
+ * BEFORE the registry sees it, so running `filterSensitiveFields` over the
+ * envelope object is a no-op for the payload — the sensitive keys live inside
+ * an opaque text string, not as object keys. (Resource reads avoid this because
+ * they filter the raw data before stringifying.) Re-parse each JSON text block,
+ * filter the parsed data, and re-serialize with the same 2-space formatting.
+ * Non-JSON text (e.g. confirm-gate warnings) and non-envelope returns are left
+ * to a direct filter pass.
+ */
+function filterToolResult(result: unknown): unknown {
+  if (
+    result &&
+    typeof result === "object" &&
+    Array.isArray((result as { content?: unknown }).content)
+  ) {
+    const envelope = result as { content: unknown[]; [key: string]: unknown };
+    const content = envelope.content.map((item) => {
+      if (
+        item &&
+        typeof item === "object" &&
+        (item as { type?: unknown }).type === "text" &&
+        typeof (item as { text?: unknown }).text === "string"
+      ) {
+        const textItem = item as { type: "text"; text: string; [key: string]: unknown };
+        return { ...textItem, text: filterJsonText(textItem.text) };
+      }
+      return item;
+    });
+    return { ...envelope, content };
+  }
+  // Non-envelope return (defensive — current handlers always wrap in content).
+  return filterSensitiveFields(result);
+}
+
+/**
+ * Parse `text` as JSON, filter sensitive fields from the parsed structure, and
+ * re-serialize with the same 2-space indentation handlers use. Plain text
+ * (warnings, messages) and non-object JSON (bare strings/numbers — nothing to
+ * redact) are returned unchanged.
+ */
+function filterJsonText(text: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  if (parsed === null || typeof parsed !== "object") return text;
+  return JSON.stringify(filterSensitiveFields(parsed), null, 2);
+}
+
 export interface CapturedTool {
   name: string;
   description: string;
@@ -256,11 +310,11 @@ export class ToolRegistry {
         return { error: `Validation failed for "${action}": ${issues}` };
       }
       const handlerResult = await tool.handler(result.data as Record<string, unknown>);
-      return filterSensitiveFields(handlerResult);
+      return filterToolResult(handlerResult);
     }
 
     const handlerResult = await tool.handler(handlerParams);
-    return filterSensitiveFields(handlerResult);
+    return filterToolResult(handlerResult);
   }
 }
 
