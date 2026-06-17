@@ -5,6 +5,38 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`vm_device_create` / `vm_device_update` now build the device payload the
+  current TrueNAS middleware expects.** The handlers forwarded the device type
+  as a top-level `dtype`, but the API folds `dtype` into the `attributes`
+  object: it rejects a top-level copy
+  (`[EINVAL] vm_device_create.dtype: Extra inputs are not permitted`) while
+  requiring `attributes.dtype` (`...attributes.dtype: Field required`) — so no
+  invocation succeeded. `dtype` stays the ergonomic top-level MCP field; the
+  handler folds it into `attributes` (it wins over any stray nested copy) and
+  sends no top-level `dtype`.
+- **`vm_create` / `vm_update` tolerate the underscore `cpu_mode` spelling.**
+  The TrueNAS enum is hyphenated (`HOST-MODEL` / `HOST-PASSTHROUGH`); callers
+  copying `HOST_MODEL` from older docs hit `[EINVAL] cpu_mode: ...`. The
+  handlers now normalize `_`→`-` (and upper-case) before the call, and the
+  field description shows the hyphenated values.
+
+### Changed
+
+- **`vm_create` / `vm_update` validate the VM name locally.** TrueNAS allows
+  only letters, digits, and underscores in a VM name (a hyphenated name failed
+  with a server-side `[EINVAL]`; an existing VM with underscores confirms the
+  real charset is broader than the "alphanumeric only" message). A name regex
+  now rejects disallowed characters before the round-trip with a clear message.
+- **`vm_device_create` discovery lists complete per-dtype attributes,**
+  including the DISK create-a-zvol fields (`create_zvol`, `zvol_name`,
+  `zvol_volsize`) and noting that `dtype` is supplied top-level, not inside
+  `attributes`.
+- **Nine VM payload-shaping tests** added (`vm-payload-shaping.test.ts`).
+
 ## [1.1.1] — 2026-06-13
 
 Bug-fix release carrying the TrueNAS 26.0.0-BETA.1 field-report fixes
