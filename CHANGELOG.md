@@ -5,6 +5,36 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The confirm gate is satisfiable again for create/update actions.** The
+  safety wrapper read `confirm` from `params` to clear a tier-1/tier-2 gate
+  but only stripped `reason` before dispatch — `confirm` was forwarded into
+  the upstream call. Handlers that build their payload from named fields
+  (the delete family, `user_create`, `filesystem_chown`/`setacl`) were
+  unaffected, but handlers that forward the whole params object
+  (`smb_share_create`/`_update`, `nfs_share_*`, the `*_config_update` family,
+  `user_update`, and peers) leaked `confirm` into a strict middleware model
+  and failed with `[EINVAL] data.confirm: Extra inputs are not permitted` —
+  leaving no invocation that both cleared the gate and produced a valid
+  payload. `registry.ts` now strips `confirm` before dispatch *unless* the
+  handler declares it in its own schema (the delete family that consumes it
+  as in-handler defense-in-depth still receives it).
+
+### Added
+
+- **`confirm` is now a first-class top-level dispatcher field**, mirroring
+  `reason`, so the safety flag has a clean control channel instead of being
+  buried in `params`. Supplying it inside `params` still works and is still
+  correct; the top-level field is preferred and overrides a nested value.
+- **Four pipeline tests** pin the strip: `confirm` removed from the
+  `smb_share_create` body, `confirm` + `reason` removed from the spread-style
+  `user_update` body, `confirm` preserved for the declaring `smb_share_delete`
+  handler, and the gate still firing with no upstream call when `confirm` is
+  absent. 230 tests total.
+
 ## [1.1.1] — 2026-06-13
 
 Bug-fix release carrying the TrueNAS 26.0.0-BETA.1 field-report fixes

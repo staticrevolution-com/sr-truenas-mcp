@@ -221,9 +221,29 @@ export class ToolRegistry {
       }
     }
 
-    // Strip reason (safety metadata only) before passing to handler.
-    // confirm is kept — many handlers use it as defense-in-depth.
-    const { reason: _r, ...handlerParams } = params;
+    // Strip safety-control fields before dispatching to the handler.
+    //
+    // `reason` is always stripped — it is tier-1 gate metadata and no upstream
+    // TrueNAS method accepts it.
+    //
+    // `confirm` is stripped UNLESS the handler declares it in its own schema.
+    // Two handler shapes coexist:
+    //   - delete/teardown handlers declare `confirm` as a required schema field
+    //     and consume it as in-handler defense-in-depth — they must keep
+    //     receiving it (and Zod would reject the call without it).
+    //   - create/update/config handlers do NOT declare `confirm`; for them it
+    //     is wrapper-only gate metadata. These handlers forward the whole
+    //     params object to the upstream call, whose pydantic model forbids
+    //     extra keys — a leaked `confirm` fails with
+    //     "[EINVAL] data.confirm: Extra inputs are not permitted", making the
+    //     gate unsatisfiable. Strip it so the create/update family stays usable.
+    const declaresConfirm = Object.prototype.hasOwnProperty.call(tool.schema, "confirm");
+    const { reason: _r, ...rest } = params;
+    let handlerParams: Record<string, unknown> = rest;
+    if (!declaresConfirm) {
+      const { confirm: _c, ...withoutConfirm } = rest;
+      handlerParams = withoutConfirm;
+    }
 
     // Runtime Zod validation
     if (Object.keys(tool.schema).length > 0) {
