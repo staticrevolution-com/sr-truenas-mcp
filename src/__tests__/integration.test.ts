@@ -414,4 +414,104 @@ describe("Integration", () => {
       });
     });
   });
+
+  describe("Confirm-gate param leak (handoff fix)", () => {
+    // The confirm gate clears via `params.confirm`, but for handlers that do
+    // not declare `confirm` in their own schema the flag must be stripped
+    // before the handler forwards params upstream — otherwise TrueNAS rejects
+    // the create/update call with "[EINVAL] data.confirm: Extra inputs are not
+    // permitted". These tests pin the strip in place.
+
+    // Build a registry whose client.call is captured so we can inspect the
+    // exact payload that would reach the TrueNAS middleware.
+    function makeSpyRegistry() {
+      const client = new TrueNASClient({
+        baseUrl: "http://stub",
+        apiKey: "stub",
+        verifySsl: true,
+      });
+      const calls: Array<{ method: string; params: unknown[] }> = [];
+      // Replace the real WebSocket round-trip with a capture stub.
+      (client as unknown as { call: TrueNASClient["call"] }).call = (async (
+        method: string,
+        params: unknown[] = [],
+      ) => {
+        calls.push({ method, params });
+        return { id: 1 };
+      }) as TrueNASClient["call"];
+      return { registry: buildRegistry(client), calls };
+    }
+
+    it("strips confirm from the upstream body for a non-declaring create handler", async () => {
+      const { registry, calls } = makeSpyRegistry();
+      const result = await registry.execute("sharing", "smb_share_create", {
+        confirm: true,
+        path: "/mnt/data-pool/isos",
+        name: "isos",
+        purpose: "DEFAULT_SHARE",
+        enabled: true,
+        browsable: true,
+      });
+
+      // The gate cleared (no warning content) and the handler executed.
+      expect((result as { content?: unknown }).content).toBeDefined();
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe("sharing.smb.create");
+
+      const body = calls[0].params[0] as Record<string, unknown>;
+      // The leaked flag is gone; the real fields survive.
+      expect("confirm" in body).toBe(false);
+      expect("reason" in body).toBe(false);
+      expect(body.name).toBe("isos");
+      expect(body.path).toBe("/mnt/data-pool/isos");
+    });
+
+    it("strips both confirm and reason for a tier-1 spread-style update handler", async () => {
+      const { registry, calls } = makeSpyRegistry();
+      // user_update is tier-1 (ConfirmWithReason) and copies the whole params
+      // object (minus id) into the upstream body via Object.entries.
+      await registry.execute("account", "user_update", {
+        confirm: true,
+        reason: "rotate full name",
+        id: 1,
+        full_name: "New Name",
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe("user.update");
+      // user.update is called as [id, body].
+      const body = calls[0].params[1] as Record<string, unknown>;
+      expect("confirm" in body).toBe(false);
+      expect("reason" in body).toBe(false);
+      expect(body.full_name).toBe("New Name");
+    });
+
+    it("preserves confirm for a delete handler that declares it in its schema", async () => {
+      const { registry, calls } = makeSpyRegistry();
+      // smb_share_delete declares confirm and uses it as in-handler
+      // defense-in-depth. If the registry over-stripped confirm, the handler
+      // would short-circuit with "Deletion not confirmed" and never call the
+      // client. Reaching sharing.smb.delete proves confirm survived.
+      await registry.execute("sharing", "smb_share_delete", {
+        confirm: true,
+        id: 7,
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe("sharing.smb.delete");
+      expect(calls[0].params).toEqual([7]);
+    });
+
+    it("still gates the create handler when confirm is absent (no upstream call)", async () => {
+      const { registry, calls } = makeSpyRegistry();
+      const result = await registry.execute("sharing", "smb_share_create", {
+        path: "/mnt/data-pool/isos",
+        name: "isos",
+      });
+      const text = (result as { content: Array<{ text: string }> }).content[0].text;
+      expect(text).toContain("DESTRUCTIVE");
+      // Gate fired before dispatch — nothing was forwarded upstream.
+      expect(calls).toHaveLength(0);
+    });
+  });
 });
