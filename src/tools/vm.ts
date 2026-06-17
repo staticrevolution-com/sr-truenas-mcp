@@ -2,6 +2,18 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
 
+/**
+ * Normalize a VM `cpu_mode` to the hyphenated form the TrueNAS middleware
+ * enum expects (`CUSTOM` / `HOST-MODEL` / `HOST-PASSTHROUGH`). Callers
+ * routinely copy the underscore spelling (`HOST_MODEL`) from older docs and
+ * get `[EINVAL] cpu_mode: Input should be 'CUSTOM','HOST-MODEL',
+ * 'HOST-PASSTHROUGH'`. Upper-casing and mapping `_`→`-` cannot corrupt a valid
+ * value — no real cpu_mode contains an underscore.
+ */
+function normalizeCpuMode(mode: unknown): unknown {
+  return typeof mode === "string" ? mode.toUpperCase().replace(/_/g, "-") : mode;
+}
+
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
   // Virtual Machines
@@ -33,7 +45,15 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "vm_create",
     "Create a new virtual machine. At minimum provide a name and memory (in MiB). Other fields have sensible defaults.",
     {
-      name: z.string().min(1).max(255).describe("Name of the VM"),
+      name: z
+        .string()
+        .min(1)
+        .max(255)
+        .regex(
+          /^[A-Za-z0-9_]+$/,
+          "VM name must contain only letters, digits, and underscores — no hyphens, spaces, or punctuation",
+        )
+        .describe("Name of the VM (letters, digits, and underscores only — no hyphens or spaces)"),
       description: z.string().optional().describe("Description of the VM"),
       vcpus: z.number().int().min(1).max(64).optional().describe("Number of virtual CPUs (1-64)"),
       cores: z.number().int().min(1).optional().describe("Number of cores per virtual CPU"),
@@ -43,7 +63,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
       autostart: z.boolean().optional().describe("Whether to start the VM automatically on boot"),
       time: z.enum(["LOCAL", "UTC"]).optional().describe("System time setting for the VM"),
       shutdown_timeout: z.number().optional().describe("Timeout in seconds for graceful shutdown"),
-      cpu_mode: z.string().optional().describe("CPU mode (e.g. CUSTOM, HOST_MODEL, HOST_PASSTHROUGH)"),
+      cpu_mode: z
+        .string()
+        .optional()
+        .describe("CPU mode: CUSTOM, HOST-MODEL, or HOST-PASSTHROUGH (hyphens, not underscores)"),
       cpu_model: z.string().optional().describe("CPU model when cpu_mode is CUSTOM"),
       machine_type: z.string().optional().describe("Machine type (e.g. q35, i440fx)"),
       hide_from_msr: z.boolean().optional().describe("Hide the hypervisor from MSR (useful for GPU passthrough)"),
@@ -61,7 +84,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (params.autostart !== undefined) body.autostart = params.autostart;
       if (params.time !== undefined) body.time = params.time;
       if (params.shutdown_timeout !== undefined) body.shutdown_timeout = params.shutdown_timeout;
-      if (params.cpu_mode !== undefined) body.cpu_mode = params.cpu_mode;
+      if (params.cpu_mode !== undefined) body.cpu_mode = normalizeCpuMode(params.cpu_mode);
       if (params.cpu_model !== undefined) body.cpu_model = params.cpu_model;
       if (params.machine_type !== undefined) body.machine_type = params.machine_type;
       if (params.hide_from_msr !== undefined) body.hide_from_msr = params.hide_from_msr;
@@ -78,17 +101,27 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Update an existing VM's configuration. Provide the VM ID and any fields to change. Only provided fields are updated.",
     {
       id: z.number().describe("Numeric ID of the VM to update"),
-      name: z.string().optional().describe("New name for the VM"),
+      name: z
+        .string()
+        .regex(
+          /^[A-Za-z0-9_]+$/,
+          "VM name must contain only letters, digits, and underscores — no hyphens, spaces, or punctuation",
+        )
+        .optional()
+        .describe("New name for the VM (letters, digits, and underscores only — no hyphens or spaces)"),
       description: z.string().optional().describe("New description"),
-      vcpus: z.number().optional().describe("Number of virtual CPUs"),
-      cores: z.number().optional().describe("Number of cores per virtual CPU"),
-      threads: z.number().optional().describe("Number of threads per core"),
-      memory: z.number().optional().describe("Memory in MiB"),
+      vcpus: z.number().int().min(1).max(64).optional().describe("Number of virtual CPUs (1-64)"),
+      cores: z.number().int().min(1).optional().describe("Number of cores per virtual CPU"),
+      threads: z.number().int().min(1).optional().describe("Number of threads per core"),
+      memory: z.number().int().min(256).optional().describe("Memory in MiB (minimum 256)"),
       bootloader: z.enum(["UEFI", "UEFI_CSM"]).optional().describe("Bootloader type"),
       autostart: z.boolean().optional().describe("Whether to start the VM automatically on boot"),
       time: z.enum(["LOCAL", "UTC"]).optional().describe("System time setting for the VM"),
       shutdown_timeout: z.number().optional().describe("Timeout in seconds for graceful shutdown"),
-      cpu_mode: z.string().optional().describe("CPU mode"),
+      cpu_mode: z
+        .string()
+        .optional()
+        .describe("CPU mode: CUSTOM, HOST-MODEL, or HOST-PASSTHROUGH (hyphens, not underscores)"),
       cpu_model: z.string().optional().describe("CPU model when cpu_mode is CUSTOM"),
       machine_type: z.string().optional().describe("Machine type"),
       hide_from_msr: z.boolean().optional().describe("Hide the hypervisor from MSR"),
@@ -108,7 +141,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (params.autostart !== undefined) body.autostart = params.autostart;
       if (params.time !== undefined) body.time = params.time;
       if (params.shutdown_timeout !== undefined) body.shutdown_timeout = params.shutdown_timeout;
-      if (params.cpu_mode !== undefined) body.cpu_mode = params.cpu_mode;
+      if (params.cpu_mode !== undefined) body.cpu_mode = normalizeCpuMode(params.cpu_mode);
       if (params.cpu_model !== undefined) body.cpu_model = params.cpu_model;
       if (params.machine_type !== undefined) body.machine_type = params.machine_type;
       if (params.hide_from_msr !== undefined) body.hide_from_msr = params.hide_from_msr;
@@ -225,19 +258,34 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "vm_device_create",
-    "Create a new device and attach it to a VM. The 'attributes' object varies by device type (dtype). For DISK: { path, type, physical_sectorsize, logical_sectorsize, iotype }. For NIC: { type (VIRTIO|E1000), nic_attach, mac }. For CDROM: { path }. For DISPLAY: { resolution, port, bind, type (VNC|SPICE), password, web }.",
+    "Create a device and attach it to a VM. Pass the device type as the top-level 'dtype'; the server folds it into the upstream 'attributes' object — do NOT also put dtype inside 'attributes'. The 'attributes' fields vary by dtype:\n" +
+      "  DISK (attach an existing zvol): { path: '/dev/zvol/<pool>/<zvol>', type: 'VIRTIO'|'AHCI', logical_sectorsize?, physical_sectorsize?, iotype? }\n" +
+      "  DISK (create a new zvol): { create_zvol: true, zvol_name: '<pool>/<name>', zvol_volsize: <bytes>, type: 'VIRTIO'|'AHCI' }\n" +
+      "  NIC: { type: 'VIRTIO'|'E1000', nic_attach, mac? }\n" +
+      "  CDROM: { path }\n" +
+      "  DISPLAY: { resolution, port, bind, type: 'VNC'|'SPICE', password?, web? }\n" +
+      "  PCI: { pptdev }   RAW: { path, type, ... }   USB: { device, controller_type? }",
     {
       vm: z.number().describe("VM ID to attach the device to"),
-      dtype: z.enum(["NIC", "DISK", "CDROM", "PCI", "DISPLAY", "RAW", "USB"]).describe("Device type"),
-      attributes: z.record(z.string(), z.unknown()).optional().describe("Device-specific attributes object"),
+      dtype: z
+        .enum(["NIC", "DISK", "CDROM", "PCI", "DISPLAY", "RAW", "USB"])
+        .describe("Device type — folded into attributes.dtype by the server"),
+      attributes: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe("Device-specific attributes (see the action description). Do NOT include dtype here — it is added from the top-level field."),
       order: z.number().optional().describe("Boot order for the device"),
     },
     async (params) => {
-      const body: Record<string, unknown> = {
-        vm: params.vm,
+      // Current TrueNAS middleware nests dtype inside `attributes` and rejects
+      // a top-level `dtype` ("Extra inputs are not permitted"). Fold the
+      // validated top-level dtype into attributes (it wins over any stray
+      // nested copy) and send no top-level dtype.
+      const attributes: Record<string, unknown> = {
+        ...(params.attributes as Record<string, unknown> | undefined),
         dtype: params.dtype,
       };
-      if (params.attributes !== undefined) body.attributes = params.attributes;
+      const body: Record<string, unknown> = { vm: params.vm, attributes };
       if (params.order !== undefined) body.order = params.order;
       const result = await client.call("vm.device.create", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
@@ -246,18 +294,31 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "vm_device_update",
-    "Update an existing VM device by its ID. Provide any fields to change (dtype, attributes, order, vm).",
+    "Update an existing VM device by its ID. Provide any fields to change. As with vm_device_create, pass the device type as top-level 'dtype' — the server folds it into attributes.dtype; do not put dtype inside 'attributes'.",
     {
       id: z.number().describe("Numeric ID of the VM device to update"),
-      dtype: z.enum(["NIC", "DISK", "CDROM", "PCI", "DISPLAY", "RAW", "USB"]).optional().describe("Device type"),
-      attributes: z.record(z.string(), z.unknown()).optional().describe("Device-specific attributes object"),
+      dtype: z
+        .enum(["NIC", "DISK", "CDROM", "PCI", "DISPLAY", "RAW", "USB"])
+        .optional()
+        .describe("Device type — folded into attributes.dtype by the server"),
+      attributes: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe("Device-specific attributes (see vm_device_create). Do NOT include dtype here."),
       order: z.number().optional().describe("Boot order for the device"),
       vm: z.number().optional().describe("VM ID to attach the device to"),
     },
     async ({ id, ...params }) => {
       const body: Record<string, unknown> = {};
-      if (params.dtype !== undefined) body.dtype = params.dtype;
-      if (params.attributes !== undefined) body.attributes = params.attributes;
+      // Mirror vm_device_create: dtype lives inside attributes on current
+      // middleware. Fold a provided dtype in and never send a top-level copy.
+      if (params.attributes !== undefined || params.dtype !== undefined) {
+        const attributes: Record<string, unknown> = {
+          ...(params.attributes as Record<string, unknown> | undefined),
+        };
+        if (params.dtype !== undefined) attributes.dtype = params.dtype;
+        body.attributes = attributes;
+      }
       if (params.order !== undefined) body.order = params.order;
       if (params.vm !== undefined) body.vm = params.vm;
       const result = await client.call("vm.device.update", [id, body]);
@@ -299,10 +360,12 @@ export function register(server: McpServer, client: TrueNASClient): void {
       protocol: z.string().optional().describe("Protocol to use (http or https)"),
     },
     async ({ id, host, protocol }) => {
-      const body: Record<string, unknown> = {};
-      if (host !== undefined) body.host = host;
-      if (protocol !== undefined) body.protocol = protocol;
-      const result = await client.call("vm.get_display_web_uri", [id, host ?? "", { protocol }]);
+      // vm.get_display_web_uri(id, host, options) — empty host means "use the
+      // request host". Only include protocol when provided so we don't send
+      // { protocol: undefined }.
+      const options: Record<string, unknown> = {};
+      if (protocol !== undefined) options.protocol = protocol;
+      const result = await client.call("vm.get_display_web_uri", [id, host ?? "", options]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

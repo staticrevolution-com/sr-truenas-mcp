@@ -5,6 +5,119 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] — 2026-06-17
+
+Bug-fix + hardening release. Closes a response-filter bypass that leaked
+secrets in tool-call responses, makes the `confirm` gate satisfiable for
+create/update actions, corrects `vm_device` `dtype` nesting and several other
+forwarding bugs (incl. a broken `dataset_set_permissions`), and tightens safety
+tiers and unknown-key handling. No removed actions; tier counts shift to 93
+tier-2 / 157 tier-3. Verified against TrueNAS-26.0.0-BETA.1.
+
+### Security
+
+- **Sensitive fields are now redacted from action (tool-call) responses.** The
+  response filter ran over the MCP envelope, but every action handler
+  serialized its payload into `content[].text` with `JSON.stringify` *before*
+  the registry filtered it — so sensitive keys sat inside an opaque string and
+  shipped through unredacted (a VM display `password` was observed in cleartext
+  via a live `vm_list` against production). `registry.execute` now re-parses
+  each JSON text block, filters it, and re-serializes; non-JSON text (e.g.
+  confirm-gate warnings) is untouched. Resource reads were already filtered
+  correctly. Adds end-to-end pipeline coverage (`response-filter-pipeline.test.ts`)
+  — the prior filter tests only exercised the matcher in isolation, which is
+  why the bypass went unnoticed.
+
+### Fixed
+
+- **The confirm gate is satisfiable again for create/update actions.** The
+  safety wrapper read `confirm` from `params` to clear a tier-1/tier-2 gate
+  but only stripped `reason` before dispatch — `confirm` was forwarded into
+  the upstream call. Handlers that build their payload from named fields
+  (the delete family, `user_create`, `filesystem_chown`/`setacl`) were
+  unaffected, but handlers that forward the whole params object
+  (`smb_share_create`/`_update`, `nfs_share_*`, the `*_config_update` family,
+  `user_update`, and peers) leaked `confirm` into a strict middleware model
+  and failed with `[EINVAL] data.confirm: Extra inputs are not permitted` —
+  leaving no invocation that both cleared the gate and produced a valid
+  payload. `registry.ts` now strips `confirm` before dispatch *unless* the
+  handler declares it in its own schema (the delete family that consumes it
+  as in-handler defense-in-depth still receives it).
+- **`vm_device_create` / `vm_device_update` now build the device payload the
+  current TrueNAS middleware expects.** The handlers forwarded the device type
+  as a top-level `dtype`, but the API folds `dtype` into the `attributes`
+  object: it rejects a top-level copy
+  (`[EINVAL] vm_device_create.dtype: Extra inputs are not permitted`) while
+  requiring `attributes.dtype` (`...attributes.dtype: Field required`) — so no
+  invocation succeeded. `dtype` stays the ergonomic top-level MCP field; the
+  handler folds it into `attributes` (it wins over any stray nested copy) and
+  sends no top-level `dtype`. Confirmed against TrueNAS-26.0.0-BETA.1.
+- **`vm_create` / `vm_update` tolerate the underscore `cpu_mode` spelling.**
+  The TrueNAS enum is hyphenated (`HOST-MODEL` / `HOST-PASSTHROUGH`); callers
+  copying `HOST_MODEL` from older docs hit `[EINVAL] cpu_mode: ...`. The
+  handlers now normalize `_`→`-` (and upper-case) before the call, and the
+  field description shows the hyphenated values.
+- **`dataset_set_permissions` works again.** It routed to `filesystem.setperm`
+  (an `@job` method) but sent the bare dataset name `tank/data` as `path`
+  (setperm needs the on-disk `/mnt/tank/data`), forwarded `user`/`group`/`acl`
+  fields the strict model rejects, never validated the path, and didn't await
+  the job — so a failure read as success. It now mirrors
+  `filesystem_set_permissions`: resolve the mountpoint, validate, send only
+  `{path, mode, uid, gid, options}`, and await the job. (The 2026-06-12
+  field-report job-wait fix had missed this second `filesystem.setperm` site.)
+- **`replication_restore` validates `target_dataset`** via `validateDatasetName`
+  like every other dataset-bearing handler (it was the one gap).
+- **`vm_display_uri` no longer builds a dead options object** or sends
+  `{ protocol: undefined }`; it passes a clean options object.
+- **`alertservice_test` strips the server-managed `id`** from the fetched
+  service before calling the strict `alertservice.test` (which rejects it).
+
+### Added
+
+- **`confirm` is now a first-class top-level dispatcher field**, mirroring
+  `reason`, so the safety flag has a clean control channel instead of being
+  buried in `params`. Supplying it inside `params` still works and is still
+  correct; the top-level field is preferred and overrides a nested value.
+
+### Changed
+
+- **`vm_create` / `vm_update` validate the VM name locally.** TrueNAS allows
+  only letters, digits, and underscores in a VM name (a hyphenated name failed
+  with a server-side `[EINVAL]`; an existing VM with underscores confirms the
+  real charset is broader than the "alphanumeric only" message). A name regex
+  now rejects disallowed characters before the round-trip with a clear message.
+- **`vm_device_create` discovery lists complete per-dtype attributes,**
+  including the DISK create-a-zvol fields (`create_zvol`, `zvol_name`,
+  `zvol_volsize`) and noting that `dtype` is supplied top-level, not inside
+  `attributes`.
+- **`vm_update` mirrors `vm_create`'s constraints** on `vcpus`/`cores`/
+  `threads`/`memory` (`.int().min(...)`), so zero/negative/fractional values
+  are caught at the client boundary instead of upstream.
+- **Long-running `@job` actions return a structured descriptor**, not a bare
+  job-id number: `replication_run`, `cloudsync_run`, `cloud_backup_run`,
+  `update_apply`, `disk_wipe`, and `pool_scrub` (START) now return
+  `{ job_id, state, note }` (via `describeAsyncJob`) so the asynchronous,
+  outcome-not-yet-known nature is explicit. Quick `@job` writes still await.
+- **Unknown params are dropped centrally.** Registry validation switched from
+  `.passthrough()` to `.strip()`, so any key not in a handler's schema is
+  removed before dispatch — generalizing the `confirm`/`reason` strip to the
+  whole stray-key class (which otherwise reaches strict pydantic models as
+  `[EINVAL] ... Extra inputs are not permitted`). The now-redundant
+  `system_general_update` field allowlist (a `.passthrough()` workaround) was
+  removed.
+- **Safety-tier consistency.** iSCSI `*_create`/`*_update` are now tier-2
+  (confirm) like SMB/NFS share creates (an extent provisions block storage),
+  and the `*_run` family is uniformly tier-2 (`replication_run`,
+  `cloud_backup_run`, `rsync_task_run`, `snapshot_task_run` joined
+  `cloudsync_run`/`cronjob_run`). Tier counts: 93 tier-2 / 157 tier-3.
+- **`awaitJobResult` / `describeAsyncJob` extracted** to `src/job-utils.ts`
+  (shared by `filesystem.ts`, `storage.ts`, `replication.ts`, `network.ts`,
+  `alert.ts`).
+- **Tests**: confirm-strip + unknown-key strip pipeline tests
+  (`integration.test.ts`), nine VM payload-shaping tests
+  (`vm-payload-shaping.test.ts`), and end-to-end response-filter tests
+  (`response-filter-pipeline.test.ts`). 242 tests total.
+
 ## [1.1.1] — 2026-06-13
 
 Bug-fix release carrying the TrueNAS 26.0.0-BETA.1 field-report fixes
@@ -61,6 +174,7 @@ loss. The `1.0.1` tag/release is withdrawn (see below).
   `handler-verification.test.ts` (job-wait + post-write verification) and
   `formatDDPError` / execute-mode discovery-error coverage.
 
+[1.1.2]: https://github.com/staticrevolution-com/sr-truenas-mcp/releases/tag/v1.1.2
 [1.1.1]: https://github.com/staticrevolution-com/sr-truenas-mcp/releases/tag/v1.1.1
 
 ## [1.0.1] — 2026-06-13 — *withdrawn, superseded by [1.1.1]*

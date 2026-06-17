@@ -104,11 +104,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "usage_collection",
     "wizardshown",
   ] as const;
-  const SYSTEM_GENERAL_UPDATE_FIELD_SET = new Set<string>(SYSTEM_GENERAL_UPDATE_FIELDS);
 
   server.tool(
     "system_general_update",
-    "Update general system configuration. All fields are optional — only provide the ones you want to change. Changes to UI ports may require reconnecting on the new port. Unknown fields are rejected.",
+    "Update general system configuration. All fields are optional — only provide the ones you want to change. Changes to UI ports may require reconnecting on the new port.",
     {
       ds_auth: z.boolean().optional().describe("Allow directory-service users to authenticate to the API/UI"),
       kbdmap: z.string().optional().describe("Keyboard map"),
@@ -136,18 +135,9 @@ export function register(server: McpServer, client: TrueNASClient): void {
       confirm: z.boolean().describe("Must be true (tier-2 confirm gate)"),
     },
     async (params) => {
-      // Reject any field outside the documented allowlist. Defends against an
-      // LLM passing an unsupported field name; the registry's passthrough
-      // would otherwise let it slip through to TrueNAS.
-      const unknown = Object.keys(params).filter(
-        (k) => k !== "confirm" && !SYSTEM_GENERAL_UPDATE_FIELD_SET.has(k),
-      );
-      if (unknown.length > 0) {
-        throw new Error(
-          `Unknown field(s) for system_general_update: ${unknown.join(", ")}. ` +
-            `Allowed: ${SYSTEM_GENERAL_UPDATE_FIELDS.join(", ")}`,
-        );
-      }
+      // Build the body from the documented field set only. This drops the
+      // tier-2 `confirm` gate flag (which the upstream model rejects) and any
+      // field the registry's .strip() didn't already remove.
       const body: Record<string, unknown> = {};
       for (const field of SYSTEM_GENERAL_UPDATE_FIELDS) {
         const value = (params as Record<string, unknown>)[field];

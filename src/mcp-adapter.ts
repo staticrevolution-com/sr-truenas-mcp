@@ -67,6 +67,12 @@ const TRUENAS_TOOL_SCHEMA = {
     .describe(
       "Required for tier 1 (high-risk) actions. Explains why the operation is being performed.",
     ),
+  confirm: z
+    .boolean()
+    .optional()
+    .describe(
+      "Required for destructive actions: set true to approve execution (tier 2), or true alongside 'reason' (tier 1). May also be supplied inside 'params'; this top-level field is the preferred channel.",
+    ),
 };
 
 export interface McpServerInit {
@@ -103,7 +109,7 @@ export function createMcpServer(init: McpServerInit): McpServer {
     TRUENAS_TOOL_DESCRIPTION,
     TRUENAS_TOOL_SCHEMA,
     TRUENAS_TOOL_ANNOTATIONS,
-    async ({ category, action, params, reason }) => {
+    async ({ category, action, params, reason, confirm }) => {
       // Mode 1: List categories
       if (!category || category === "help") {
         return {
@@ -122,6 +128,11 @@ export function createMcpServer(init: McpServerInit): McpServer {
       try {
         const actionParams = { ...(params || {}) };
         if (reason) actionParams.reason = reason;
+        // Top-level `confirm` is the preferred channel and overrides any value
+        // nested in `params`. The registry's gate reads `actionParams.confirm`;
+        // it then strips the flag before dispatch for handlers that don't
+        // declare it, so it never leaks into the upstream payload.
+        if (confirm !== undefined) actionParams.confirm = confirm;
         const result = await init.registry.execute(category, action, actionParams);
 
         // If the handler returned an MCP-shaped response, pass it through

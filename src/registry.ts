@@ -12,6 +12,60 @@ import { z } from "zod";
 import { ACTION_TIERS, SafetyTier, BLOCKED_ACTIONS, getActionTier } from "./safety.js";
 import { filterSensitiveFields } from "./filters.js";
 
+/**
+ * Filter an MCP tool result before returning it to the client.
+ *
+ * Handlers serialize their payload into `content[].text` via `JSON.stringify`
+ * BEFORE the registry sees it, so running `filterSensitiveFields` over the
+ * envelope object is a no-op for the payload — the sensitive keys live inside
+ * an opaque text string, not as object keys. (Resource reads avoid this because
+ * they filter the raw data before stringifying.) Re-parse each JSON text block,
+ * filter the parsed data, and re-serialize with the same 2-space formatting.
+ * Non-JSON text (e.g. confirm-gate warnings) and non-envelope returns are left
+ * to a direct filter pass.
+ */
+function filterToolResult(result: unknown): unknown {
+  if (
+    result &&
+    typeof result === "object" &&
+    Array.isArray((result as { content?: unknown }).content)
+  ) {
+    const envelope = result as { content: unknown[]; [key: string]: unknown };
+    const content = envelope.content.map((item) => {
+      if (
+        item &&
+        typeof item === "object" &&
+        (item as { type?: unknown }).type === "text" &&
+        typeof (item as { text?: unknown }).text === "string"
+      ) {
+        const textItem = item as { type: "text"; text: string; [key: string]: unknown };
+        return { ...textItem, text: filterJsonText(textItem.text) };
+      }
+      return item;
+    });
+    return { ...envelope, content };
+  }
+  // Non-envelope return (defensive — current handlers always wrap in content).
+  return filterSensitiveFields(result);
+}
+
+/**
+ * Parse `text` as JSON, filter sensitive fields from the parsed structure, and
+ * re-serialize with the same 2-space indentation handlers use. Plain text
+ * (warnings, messages) and non-object JSON (bare strings/numbers — nothing to
+ * redact) are returned unchanged.
+ */
+function filterJsonText(text: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  if (parsed === null || typeof parsed !== "object") return text;
+  return JSON.stringify(filterSensitiveFields(parsed), null, 2);
+}
+
 export interface CapturedTool {
   name: string;
   description: string;
@@ -221,14 +275,38 @@ export class ToolRegistry {
       }
     }
 
-    // Strip reason (safety metadata only) before passing to handler.
-    // confirm is kept — many handlers use it as defense-in-depth.
-    const { reason: _r, ...handlerParams } = params;
+    // Strip safety-control fields before dispatching to the handler.
+    //
+    // `reason` is always stripped — it is tier-1 gate metadata and no upstream
+    // TrueNAS method accepts it.
+    //
+    // `confirm` is stripped UNLESS the handler declares it in its own schema.
+    // Two handler shapes coexist:
+    //   - delete/teardown handlers declare `confirm` as a required schema field
+    //     and consume it as in-handler defense-in-depth — they must keep
+    //     receiving it (and Zod would reject the call without it).
+    //   - create/update/config handlers do NOT declare `confirm`; for them it
+    //     is wrapper-only gate metadata. These handlers forward the whole
+    //     params object to the upstream call, whose pydantic model forbids
+    //     extra keys — a leaked `confirm` fails with
+    //     "[EINVAL] data.confirm: Extra inputs are not permitted", making the
+    //     gate unsatisfiable. Strip it so the create/update family stays usable.
+    const declaresConfirm = Object.prototype.hasOwnProperty.call(tool.schema, "confirm");
+    const { reason: _r, ...rest } = params;
+    let handlerParams: Record<string, unknown> = rest;
+    if (!declaresConfirm) {
+      const { confirm: _c, ...withoutConfirm } = rest;
+      handlerParams = withoutConfirm;
+    }
 
-    // Runtime Zod validation
+    // Runtime Zod validation. `.strip()` (Zod's default) drops any key not in
+    // the handler's schema, so a stray/unknown param can't ride into the
+    // upstream call and trip its strict pydantic model
+    // ("[EINVAL] ... Extra inputs are not permitted"). This generalizes the
+    // confirm/reason strip above to the whole unknown-key class.
     if (Object.keys(tool.schema).length > 0) {
       const zodShape = tool.schema as z.ZodRawShape;
-      const result = z.object(zodShape).passthrough().safeParse(handlerParams);
+      const result = z.object(zodShape).strip().safeParse(handlerParams);
       if (!result.success) {
         const issues = result.error.issues
           .map((i) => `${i.path.join(".")}: ${i.message}`)
@@ -236,11 +314,11 @@ export class ToolRegistry {
         return { error: `Validation failed for "${action}": ${issues}` };
       }
       const handlerResult = await tool.handler(result.data as Record<string, unknown>);
-      return filterSensitiveFields(handlerResult);
+      return filterToolResult(handlerResult);
     }
 
     const handlerResult = await tool.handler(handlerParams);
-    return filterSensitiveFields(handlerResult);
+    return filterToolResult(handlerResult);
   }
 }
 

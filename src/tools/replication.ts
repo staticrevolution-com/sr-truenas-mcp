@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
 import { validateDatasetName, validateTrueNASPath } from "../validation.js";
+import { describeAsyncJob } from "../job-utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -133,7 +134,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "replication_run",
     "Manually run a replication task now",
     { id: z.number().describe("Replication task ID") },
-    async ({ id }) => jsonContent(await client.call("replication.run", [id])),
+    async ({ id }) => jsonContent(describeAsyncJob(await client.call("replication.run", [id]))),
   );
 
   server.tool(
@@ -144,7 +145,10 @@ export function register(server: McpServer, client: TrueNASClient): void {
       name: z.string().describe("Name for the restored replication task"),
       target_dataset: z.string().describe("Target dataset for restoration"),
     },
-    async ({ id, ...rest }) => jsonContent(await client.call("replication.restore", [id, rest])),
+    async ({ id, ...rest }) => {
+      validateDatasetName(rest.target_dataset);
+      return jsonContent(await client.call("replication.restore", [id, rest]));
+    },
   );
 
   // =========================================================================
@@ -233,7 +237,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "cloudsync_run",
     "Run a cloud sync task now",
     { id: z.number().describe("Cloud sync task ID") },
-    async ({ id }) => jsonContent(await client.call("cloudsync.sync", [id])),
+    async ({ id }) => jsonContent(describeAsyncJob(await client.call("cloudsync.sync", [id]))),
   );
 
   server.tool(
@@ -403,7 +407,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "cloud_backup_run",
     "Run a cloud backup task now",
     { id: z.number().describe("Cloud backup task ID") },
-    async ({ id }) => jsonContent(await client.call("cloud_backup.sync", [id])),
+    async ({ id }) => jsonContent(describeAsyncJob(await client.call("cloud_backup.sync", [id]))),
   );
 
   server.tool(

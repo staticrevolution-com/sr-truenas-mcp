@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
 import { validateTrueNASPath } from "../validation.js";
+import { describeAsyncJob } from "../job-utils.js";
 
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
@@ -658,7 +659,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "Wipe aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.call("disk.wipe", [dev_name, mode, synccache]);
+      // disk.wipe is a long-running @job; describe it rather than blocking.
+      const result = describeAsyncJob(await client.call("disk.wipe", [dev_name, mode, synccache]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
