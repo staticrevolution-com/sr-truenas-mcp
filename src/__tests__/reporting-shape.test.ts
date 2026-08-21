@@ -283,6 +283,55 @@ describe("reporting_get_data through the registry", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("forwards unit and page — previously dropped before the call", async () => {
+    // Verified against 26.0.0-BETA.1: the query schema accepts both, and
+    // additionalProperties is false, so middleware would have rejected them
+    // loudly. Silently discarding them was the only reason nobody noticed.
+    const { registry, calls } = makeSpyRegistry();
+    await registry.execute("reporting", "reporting_get_data", {
+      graphs: [{ name: "memory" }],
+      unit: "HOUR",
+      page: 3,
+    });
+    const query = queryOf(calls);
+    expect(query.unit).toBe("HOUR");
+    expect(query.page).toBe(3);
+    expect("start" in query).toBe(false);
+  });
+
+  it("rejects unit combined with start/end, which the API forbids", async () => {
+    const { registry, calls } = makeSpyRegistry();
+    await expect(
+      registry.execute("reporting", "reporting_get_data", {
+        graphs: [{ name: "memory" }],
+        unit: "HOUR",
+        start: "2026-08-20T22:00:00Z",
+      }),
+    ).rejects.toThrow(/mutually exclusive/i);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects page without unit", async () => {
+    const { registry, calls } = makeSpyRegistry();
+    await expect(
+      registry.execute("reporting", "reporting_get_data", {
+        graphs: [{ name: "memory" }],
+        page: 2,
+      }),
+    ).rejects.toThrow(/requires 'unit'/i);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects an unknown unit rather than passing it upstream", async () => {
+    const { registry, calls } = makeSpyRegistry();
+    const result = await registry.execute("reporting", "reporting_get_data", {
+      graphs: [{ name: "memory" }],
+      unit: "FORTNIGHT",
+    });
+    expect(JSON.stringify(result)).toMatch(/unit/i);
+    expect(calls).toHaveLength(0);
+  });
+
   it("rejects an uninterpretable timestamp with a useful message", async () => {
     const { registry, calls } = makeSpyRegistry();
     const result = await registry.execute("reporting", "reporting_get_data", {

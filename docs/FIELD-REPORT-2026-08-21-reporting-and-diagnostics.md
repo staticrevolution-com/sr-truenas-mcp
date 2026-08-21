@@ -1,6 +1,6 @@
 # Field Report — 2026-08-21: `reporting_get_data` is unusable, and the memory-diagnostics gap
 
-**Status:** **Bugs 1 and 3 fixed** (see CHANGELOG `[Unreleased]`); Bug 2 and Gaps 4–5 open · **Origin:** a live
+**Status:** **All three bugs fixed** (1 and 3 in 1.2.0, 2 unreleased); **Gaps 4 and 5 closed as not-implementable / redundant** — see below · **Origin:** a live
 memory-pressure investigation against a production TrueNAS **26.0.0-BETA.1**
 host, driven through a gateway-federated `sr-truenas-mcp` v1.1.1.
 
@@ -96,9 +96,12 @@ no test covering this handler's query construction.
 
 ## Bug 2 — `unit` / `page` are silently dropped
 
-> **PARTIALLY ADDRESSED.** Still dropped — forwarding them is gated on
-> confirming whether 26.0 middleware accepts them. With Bug 1 fixed, `start`/`end`
-> now provide the windowing they were the fallback for.
+> **FIXED.** Middleware *does* accept both (enumerated against 26.0.0-BETA.1),
+> and its `additionalProperties: false` means it would have rejected them
+> loudly — dropping them silently was the only reason it went unnoticed. Both
+> are now forwarded. `page` is **not** an index: `unit: "HOUR", page: 3` returns
+> the last *three hours*. `unit` + `start`/`end` is rejected by the API and now
+> client-side too.
 
 
 The handler builds `query` from exactly three keys (`aggregate`, `start`, `end`).
@@ -177,6 +180,11 @@ This one change would make the reporting surface usable in-context.
 
 ## Gap 4 — no kernel-log / `dmesg` action
 
+> **CLOSED — not implementable.** Of **781** middleware methods on
+> 26.0.0-BETA.1, none expose the kernel ring buffer. Recorded as a known
+> limitation in TROUBLESHOOTING.md with the cgroup `memory.events` substitute.
+
+
 There is no action among the 270 that returns kernel messages
 (`grep -rn "dmesg\|kmsg\|kernel_log" src/` → nothing).
 
@@ -204,6 +212,12 @@ than shipping a fragile action.
 ---
 
 ## Gap 5 — no memory / swap / ARC summary action
+
+> **CLOSED — redundant, and impossible for swap.** Memory and ARC compose from
+> `reporting_get_data` in one call, cheap now that `detail` defaults to summary,
+> so a dedicated action would be surface for its own sake. Swap has no
+> middleware source at all. Recorded in TROUBLESHOOTING.md.
+
 
 `system_info` returns `physmem` (total bytes) and nothing else about memory.
 There is no action for free/available memory, swap state, or an ARC summary

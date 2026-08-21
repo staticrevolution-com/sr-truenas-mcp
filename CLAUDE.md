@@ -31,7 +31,7 @@ This repo is maintained by Warren Kelly. AI tooling (Claude Code) is used as par
 ```bash
 npm install
 npm run build          # tsc
-npm test               # vitest run (268 tests)
+npm test               # vitest run (272 tests)
 npm run type-check     # tsc --noEmit
 npm run dev            # tsc --watch
 npm run build:binary   # tsc + esbuild + pkg → dist/sr-truenas-mcp (Linux x64 binary)

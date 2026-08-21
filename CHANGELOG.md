@@ -5,6 +5,34 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`reporting_get_data` forwards `unit` and `page`.** Both were discarded
+  before the call, so a caller paging backwards received correctly-shaped data
+  for the *last hour* with no indication the parameters were ignored. Verified
+  against 26.0.0-BETA.1: the query schema accepts both, and its
+  `additionalProperties` is `false`, so middleware would have rejected them
+  loudly — silently dropping them was the only reason it went unnoticed.
+
+  Note `page` is **not** an index: `unit: "HOUR", page: 3` returns the last
+  *three hours*, not the third hour back. `unit` and `start`/`end` are mutually
+  exclusive (the API rejects the combination), and `page` requires `unit`; both
+  are now rejected client-side with a clear message.
+
+### Documented
+
+- **Kernel log access is not possible** and the gap is now recorded in
+  TROUBLESHOOTING.md rather than left as a future action. Enumerated against
+  26.0.0-BETA.1: of 781 middleware methods, none expose the kernel ring buffer.
+  The cgroup `memory.events` / `State.OOMKilled` substitute is documented in its
+  place.
+- **No memory/swap/ARC summary action will be added.** Memory and ARC compose
+  from `reporting_get_data` in a single call — cheap now that `detail` defaults
+  to `"summary"` — so a dedicated action would be redundant surface. Swap has no
+  middleware source at all; read `/proc/swaps` from a container instead.
+
 ## [1.2.0] — 2026-08-21
 
 Fixes the two `reporting_get_data` defects from the 2026-08-21 field report

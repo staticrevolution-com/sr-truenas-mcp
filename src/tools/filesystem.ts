@@ -229,11 +229,32 @@ export function register(server: McpServer, client: TrueNASClient): void {
         .optional()
         .default(120)
         .describe("Target row count per graph when detail='downsampled'."),
+      unit: z
+        .enum(["HOUR", "DAY", "WEEK", "MONTH", "YEAR"])
+        .optional()
+        .describe("Relative-window unit, as an alternative to start/end. Mutually exclusive with them — the API rejects both together."),
+      page: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("How many `unit` periods back from now to include. NOT an index: unit='HOUR', page=3 returns the last THREE HOURS, not the third hour back. Requires `unit`."),
     },
-    async ({ graphs, start, end, aggregate, detail, max_points }) => {
+    async ({ graphs, start, end, aggregate, detail, max_points, unit, page }) => {
       const query: Record<string, unknown> = { aggregate };
       if (start !== undefined) query.start = start;
       if (end !== undefined) query.end = end;
+      if (unit !== undefined) query.unit = unit;
+      if (page !== undefined) query.page = page;
+      if (unit !== undefined && (start !== undefined || end !== undefined)) {
+        throw new Error(
+          "reporting_get_data: 'unit' and 'start'/'end' are mutually exclusive — " +
+            "use one windowing style or the other."
+        );
+      }
+      if (page !== undefined && unit === undefined) {
+        throw new Error("reporting_get_data: 'page' requires 'unit'.");
+      }
       if (start !== undefined && end !== undefined && end <= start) {
         throw new Error(
           `reporting_get_data: 'end' (${end}) must be after 'start' (${start}); both are epoch seconds.`

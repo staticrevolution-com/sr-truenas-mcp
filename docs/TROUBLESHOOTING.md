@@ -207,6 +207,39 @@ These are documented in the README but worth restating:
   API. Pass the dataset name (e.g., `tank/data`) and the handler
   resolves it to the on-disk path.
 
+- **Kernel log / `dmesg` is not available, and cannot be.** Enumerated
+  against 26.0.0-BETA.1: of **781** middleware methods, none expose the
+  kernel ring buffer (no `dmesg`, `kmsg`, `klog` or journal method — the
+  only near-matches are syslog *certificate* choices). Containers on the
+  host cannot substitute either: without `CAP_SYSLOG` and `/dev/kmsg`,
+  `dmesg` returns *"read kernel buffer failed: Operation not permitted"*.
+
+  This matters most for OOM triage, where the kernel log is what separates
+  `Out of memory: Killed process …` (host-wide exhaustion) from
+  `Memory cgroup out of memory: Killed process …` (a container hitting its
+  own limit) — different root causes, different fixes. **Substitute:** read
+  the container's cgroup `memory.events` (`oom_kill` counter) and
+  `memory.peak`, and check `State.OOMKilled` on the container itself.
+  `false` on a container whose *inner* processes died means the kernel
+  killed inside the cgroup, not the host reaping the container.
+
+- **No host memory / swap / ARC summary action — use `reporting_get_data`.**
+  There is no middleware method for host memory or swap (the only `mem`
+  methods are VM-scoped: `vm.get_available_memory` and peers). A dedicated
+  action was considered and deliberately not added, because memory and ARC
+  are already one call away and a new action would be redundant surface:
+
+  ```
+  reporting_get_data graphs=[{name:"memory"},{name:"arcsize"}]
+  ```
+
+  With `detail: "summary"` (the default) that returns min/mean/max per graph
+  in a few hundred bytes. `arcrate` and `arcresult` cover hit rates.
+
+  **Swap has no source at all** — not via this API. Read `/proc/swaps` or
+  `/proc/meminfo` from any container with a shell if you need it; those
+  values are not namespaced.
+
 ## When to file a bug
 
 If preflight passes, your auth works against the TrueNAS UI, and an
