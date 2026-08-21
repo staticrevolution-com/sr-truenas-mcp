@@ -1,6 +1,6 @@
 # Field Report — 2026-08-21: `reporting_get_data` is unusable, and the memory-diagnostics gap
 
-**Status:** triaged against source; **no fixes landed yet** · **Origin:** a live
+**Status:** **Bugs 1 and 3 fixed** (see CHANGELOG `[Unreleased]`); Bug 2 and Gaps 4–5 open · **Origin:** a live
 memory-pressure investigation against a production TrueNAS **26.0.0-BETA.1**
 host, driven through a gateway-federated `sr-truenas-mcp` v1.1.1.
 
@@ -29,6 +29,11 @@ MCP the wrong tool for the most common "something died on the box" question.
 ---
 
 ## Bug 1 — `reporting_get_data` `start`/`end` are unusable in **both** directions
+
+> **FIXED.** Both parameters now accept epoch seconds (number or string) and
+> ISO 8601, coerced to integer epoch seconds before the call. An inverted window
+> is rejected up front. See `parseEpochSeconds` in `src/reporting.ts`.
+
 
 **This is the blocking bug.** The parameters cannot be satisfied by any caller.
 
@@ -91,6 +96,11 @@ no test covering this handler's query construction.
 
 ## Bug 2 — `unit` / `page` are silently dropped
 
+> **PARTIALLY ADDRESSED.** Still dropped — forwarding them is gated on
+> confirming whether 26.0 middleware accepts them. With Bug 1 fixed, `start`/`end`
+> now provide the windowing they were the fallback for.
+
+
 The handler builds `query` from exactly three keys (`aggregate`, `start`, `end`).
 Anything else a caller passes — notably `unit` and `page`, the conventional
 TrueNAS reporting idiom for "give me the Nth window back" — is **discarded
@@ -115,6 +125,10 @@ the result is the worst of the three options.
 ---
 
 ## Bug 3 — the useful part of the response is buried under 3,600 raw points
+
+> **FIXED.** `detail` now defaults to `"summary"`; `"downsampled"` and `"raw"`
+> are available. See `shapeReportingResult` in `src/reporting.ts`.
+
 
 `reporting_get_data` returns middlewared's payload verbatim. A **two-graph,
 one-hour** query returned **400,403 characters across 28,856 lines** — 3,601
