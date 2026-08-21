@@ -6,7 +6,8 @@ During a service deploy, an agent session drove the deployed `sr-truenas-mcp` (f
 via AgentGateway) against a production box now running **TrueNAS 26.0.0-BETA.1**. REST v2
 is fully removed in 26.0 (`/api/v2.0/*` 404s); the WebSocket JSON-RPC API is the only API
 surface. Three bugs surfaced; each was triaged against the source and root-caused. This
-document is the durable record (GitHub Issues are disabled on this repo).
+document is the durable record. (GitHub Issues were disabled on this repo when
+this was written; they were enabled 2026-08-21.)
 
 ## Bug 1 — API errors swallowed into "API call failed"
 
