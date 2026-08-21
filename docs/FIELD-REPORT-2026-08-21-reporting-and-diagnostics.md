@@ -5,7 +5,9 @@ memory-pressure investigation against a production TrueNAS **26.0.0-BETA.1**
 host, driven through a gateway-federated `sr-truenas-mcp` v1.1.1.
 
 Companion to [`FIELD-REPORT-2026-06-12-truenas-26.md`](./FIELD-REPORT-2026-06-12-truenas-26.md).
-GitHub Issues are disabled on this repo, so this document is the durable record.
+Issues were disabled on this repo when this was written, so field reports are the
+durable record for findings of this size; Issues were enabled 2026-08-21 and suit
+smaller reports.
 
 ## Context — what the session was trying to do
 

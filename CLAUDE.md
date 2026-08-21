@@ -204,4 +204,6 @@ Update: publish a new tagged release (CI builds the binary tarball + GHCR image)
 
 ## Portainer stack safety
 
-Docker stack lifecycle goes through Portainer endpoints, never `dockerProxy`. Full rule: `~/.claude/rules/portainer-safety.md`.
+Docker stack lifecycle goes through Portainer's stack endpoints, never `dockerProxy`.
+This is an operator convention for the environment this server is deployed into, not a
+constraint of this codebase.
