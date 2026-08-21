@@ -2,7 +2,26 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
 import { validateTrueNASPath } from "../validation.js";
+import { parseEpochSeconds, shapeReportingResult } from "../reporting.js";
 import { awaitJobResult } from "../job-utils.js";
+
+/**
+ * `reporting.get_data` requires integer epoch seconds. The tool schema used to
+ * declare `start`/`end` as plain strings and forward them verbatim, so neither a
+ * string (rejected by middlewared) nor a number (rejected by the schema) worked.
+ * Accept both plus ISO 8601, and coerce — see docs/FIELD-REPORT-2026-08-21.
+ */
+const epochParam = z.union([z.string(), z.number()]).transform((value, ctx) => {
+  const seconds = parseEpochSeconds(value);
+  if (seconds === null) {
+    ctx.addIssue({
+      code: "custom",
+      message: `Expected epoch seconds or an ISO 8601 timestamp, got ${JSON.stringify(value)}`,
+    });
+    return z.NEVER;
+  }
+  return seconds;
+});
 
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
@@ -187,16 +206,42 @@ export function register(server: McpServer, client: TrueNASClient): void {
           })
         )
         .describe("Array of graphs to query"),
-      start: z.string().optional().describe("Start time in ISO 8601 or epoch format"),
-      end: z.string().optional().describe("End time in ISO 8601 or epoch format"),
-      aggregate: z.boolean().optional().default(true).describe("Whether to aggregate data points"),
+      start: epochParam
+        .optional()
+        .describe("Start time — epoch seconds (number or string) or an ISO 8601 timestamp. Coerced to integer epoch seconds, which is what the API requires."),
+      end: epochParam
+        .optional()
+        .describe("End time — epoch seconds (number or string) or an ISO 8601 timestamp. Coerced to integer epoch seconds, which is what the API requires."),
+      aggregate: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Ask the API for the min/mean/max `aggregations` block. This does NOT reduce the size of `data` — use `detail` for that."),
+      detail: z
+        .enum(["summary", "downsampled", "raw"])
+        .optional()
+        .default("summary")
+        .describe("How much of the series to return. 'summary' (default) keeps aggregations/legend/start/end and omits the raw points; 'downsampled' returns ~max_points rows preserving per-bucket minima and maxima; 'raw' returns every point (thousands per graph — can exceed a client's response budget)."),
+      max_points: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .default(120)
+        .describe("Target row count per graph when detail='downsampled'."),
     },
-    async ({ graphs, start, end, aggregate }) => {
+    async ({ graphs, start, end, aggregate, detail, max_points }) => {
       const query: Record<string, unknown> = { aggregate };
       if (start !== undefined) query.start = start;
       if (end !== undefined) query.end = end;
+      if (start !== undefined && end !== undefined && end <= start) {
+        throw new Error(
+          `reporting_get_data: 'end' (${end}) must be after 'start' (${start}); both are epoch seconds.`
+        );
+      }
       const result = await client.call("reporting.get_data", [graphs, query]);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      const shaped = shapeReportingResult(result, detail, max_points);
+      return { content: [{ type: "text", text: JSON.stringify(shaped, null, 2) }] };
     }
   );
 

@@ -5,6 +5,47 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Fixes the two `reporting_get_data` defects from the 2026-08-21 field report
+(`docs/FIELD-REPORT-2026-08-21-reporting-and-diagnostics.md`). No action surface
+change — tier counts and the 270 registered actions are unchanged.
+
+### Fixed
+
+- **`reporting_get_data`'s `start`/`end` are satisfiable again.** They could not
+  be supplied in any form: the Zod schema demanded a `string`, middlewared's
+  query schema demands an **integer** epoch, and the value was forwarded
+  verbatim — so a string returned
+  `[EINVAL] query.start: Input should be a valid integer` and a number was
+  rejected by the schema before the call. ISO 8601 was never converted despite
+  the parameter description promising it. The only call that worked omitted both
+  and returned a fixed last-hour window, which put any older incident out of
+  reach. Both parameters now accept epoch seconds (number *or* string) and ISO
+  8601, and coerce to integer epoch seconds before the call
+  (`parseEpochSeconds` in `src/reporting.ts`). An inverted window is rejected up
+  front instead of being passed upstream.
+
+### Changed
+
+- **`reporting_get_data` now returns a summary by default rather than the full
+  series.** A two-graph, one-hour query returned 400,403 characters — 3,601
+  points per graph at 1s resolution — while the `aggregations` block the
+  response already carries is ~200 bytes and answers most diagnostic questions.
+  The new `detail` parameter defaults to `"summary"`, which keeps
+  `aggregations`, `legend`, `start` and `end`, drops `data`, and reports the
+  elided row count as `data_points`.
+
+  **This changes the default response shape.** Callers that parse `data` must
+  pass `detail: "raw"` to restore the previous behaviour. `detail:
+  "downsampled"` returns roughly `max_points` rows (default 120), bucketed to
+  preserve per-bucket minima and maxima — a mean-based reduction would erase
+  exactly the spikes and troughs these graphs get consulted for.
+
+- `aggregate`'s description now states that it adds the `aggregations` block and
+  does **not** reduce the size of `data`; the previous wording ("whether to
+  aggregate data points") read as a downsampling control, which it never was.
+
 ## [1.1.2] — 2026-06-17
 
 Bug-fix + hardening release. Closes a response-filter bypass that leaked
