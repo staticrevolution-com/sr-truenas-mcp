@@ -5,11 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] — 2026-08-21
 
 Fixes the two `reporting_get_data` defects from the 2026-08-21 field report
 (`docs/FIELD-REPORT-2026-08-21-reporting-and-diagnostics.md`). No action surface
-change — tier counts and the 270 registered actions are unchanged.
+change — tier counts and the 270 registered actions are unchanged. Minor rather
+than major despite the default response shape moving: the change is additive
+(`detail`, `max_points`) with a documented opt-out, and it follows the
+precedent of 1.1.2, which altered the content of every response (secret
+redaction) as a patch. Verified against TrueNAS-26.0.0-BETA.1.
 
 ### Fixed
 
