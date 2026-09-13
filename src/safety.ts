@@ -121,6 +121,7 @@ export const ACTION_TIERS: Record<string, SafetyTier> = {
   tunable_delete: SafetyTier.Confirm,
 
   // Filesystem
+  filesystem_put: SafetyTier.Confirm,
   filesystem_mkdir: SafetyTier.Confirm,
   filesystem_set_permissions: SafetyTier.Confirm,
   filesystem_chown: SafetyTier.Confirm,
@@ -193,6 +194,7 @@ export const ACTION_TIERS: Record<string, SafetyTier> = {
   // System
   system_info: SafetyTier.Open,
   system_version: SafetyTier.Open,
+  system_mcp_version: SafetyTier.Open,
   system_general_config: SafetyTier.Open,
   system_general_update: SafetyTier.Confirm,
   system_advanced_config: SafetyTier.Open,
@@ -386,6 +388,7 @@ export const ACTION_TIERS: Record<string, SafetyTier> = {
   // Filesystem
   filesystem_stat: SafetyTier.Open,
   filesystem_listdir: SafetyTier.Open,
+  filesystem_get: SafetyTier.Open,
   filesystem_get_acl: SafetyTier.Open,
 
   // Reporting

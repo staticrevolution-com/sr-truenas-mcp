@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
-import { validateTrueNASPath } from "../validation.js";
+import { validateHomeDirectory, validateTrueNASPath } from "../validation.js";
 import { describeAsyncJob } from "../job-utils.js";
 
 export function register(server: McpServer, client: TrueNASClient): void {
@@ -378,7 +378,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       password: z.string().optional().describe("User password"),
       uid: z.number().optional().describe("Unix UID. If omitted, auto-assigned."),
       smb: z.boolean().optional().describe("Enable SMB/Samba authentication for this user"),
-      home: z.string().optional().describe("Home directory path"),
+      home: z.string().optional().describe("Home directory path — must be under /mnt/, or '/var/empty' (the TrueNAS default for accounts with no home directory)"),
       home_create: z.boolean().optional().describe("Create the home directory if it does not exist"),
       shell: z.string().optional().describe("Login shell path, e.g. '/bin/bash'. Use user_shell_choices to see options."),
       sudo_commands: z.array(z.string()).optional().describe("Commands this user can run with sudo"),
@@ -399,7 +399,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (params.password !== undefined) body.password = params.password;
       if (params.uid !== undefined) body.uid = params.uid;
       if (params.smb !== undefined) body.smb = params.smb;
-      if (params.home !== undefined) { validateTrueNASPath(params.home); body.home = params.home; }
+      if (params.home !== undefined) { body.home = validateHomeDirectory(params.home as string); }
       if (params.home_create !== undefined) body.home_create = params.home_create;
       if (params.shell !== undefined) body.shell = params.shell;
       if (params.sudo_commands !== undefined) body.sudo_commands = params.sudo_commands;
@@ -425,7 +425,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       password: z.string().optional().describe("User password"),
       uid: z.number().optional().describe("Unix UID"),
       smb: z.boolean().optional().describe("Enable SMB/Samba authentication"),
-      home: z.string().optional().describe("Home directory path"),
+      home: z.string().optional().describe("Home directory path — must be under /mnt/, or '/var/empty' (the TrueNAS default for accounts with no home directory)"),
       home_create: z.boolean().optional().describe("Create the home directory if it does not exist"),
       shell: z.string().optional().describe("Login shell path"),
       sudo_commands: z.array(z.string()).optional().describe("Commands this user can run with sudo"),
@@ -437,7 +437,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     },
     async (params) => {
       const { id, ...rest } = params;
-      if (rest.home !== undefined) validateTrueNASPath(rest.home as string);
+      if (rest.home !== undefined) rest.home = validateHomeDirectory(rest.home as string);
       const body: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(rest)) {
         if (value !== undefined) body[key] = value;

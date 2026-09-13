@@ -13,6 +13,7 @@
 import WebSocket from "ws";
 import { randomUUID } from "node:crypto";
 import { type Logger, noopLogger } from "./logger.js";
+import { downloadFromPipe, uploadToPipe } from "./file-transfer.js";
 
 export interface TrueNASClientConfig {
   baseUrl: string;
@@ -158,6 +159,7 @@ function sleep(ms: number): Promise<void> {
 
 export class TrueNASClient {
   private wsUrl: string;
+  private baseUrl: string;
   private apiKey: string;
   private verifySsl: boolean;
   private logger: Logger;
@@ -171,6 +173,7 @@ export class TrueNASClient {
 
   constructor(config: TrueNASClientConfig) {
     const base = config.baseUrl.replace(/\/+$/, "");
+    this.baseUrl = base;
     this.apiKey = config.apiKey;
     this.verifySsl = config.verifySsl ?? true;
     this.logger = config.logger ?? noopLogger;
@@ -481,6 +484,61 @@ export class TrueNASClient {
       delay = nextPollDelay(delay);
     }
     throw new Error(`Job ${jobId} timed out after ${timeoutMs}ms`);
+  }
+
+  /**
+   * Read a file's content.
+   *
+   * `filesystem.get` writes to a pipe, so its bytes never traverse the
+   * WebSocket: `core.download` starts the job and mints a single-use,
+   * origin-matched `/_download` URL with a 300-second TTL, and the bytes come
+   * back over HTTPS. `buffered: true` makes the job complete before the fetch
+   * rather than blocking the download on a live writer, which matters because
+   * a failure then surfaces as a job error instead of a truncated read.
+   */
+  async getFileContent(path: string, limitBytes: number): Promise<Buffer> {
+    const handle = await this.call("core.download", [
+      "filesystem.get",
+      [path],
+      path.split("/").pop() || "download",
+      true,
+    ]) as [number, string];
+
+    if (!Array.isArray(handle) || typeof handle[1] !== "string") {
+      throw new Error(`core.download returned an unexpected shape: ${JSON.stringify(handle)}`);
+    }
+    const [jobId, url] = handle;
+
+    // Wait for the buffered job first so a read failure (missing file,
+    // permission denied) is reported as such, rather than as an empty body.
+    await this.waitForJob(jobId);
+
+    return downloadFromPipe(
+      { baseUrl: this.baseUrl, apiKey: this.apiKey, verifySsl: this.verifySsl },
+      url,
+      limitBytes,
+    );
+  }
+
+  /**
+   * Write a file's content.
+   *
+   * The `/_upload` 200 only means the job was enqueued, so the job is awaited
+   * here — otherwise a write that failed inside middlewared would be reported
+   * to the caller as a completed write.
+   */
+  async putFileContent(
+    path: string,
+    content: Buffer,
+    options: { append?: boolean; mode?: number | null } = {},
+  ): Promise<JobResult> {
+    const jobId = await uploadToPipe(
+      { baseUrl: this.baseUrl, apiKey: this.apiKey, verifySsl: this.verifySsl },
+      "filesystem.put",
+      [path, { append: options.append ?? false, mode: options.mode ?? null }],
+      content,
+    );
+    return this.waitForJob(jobId);
   }
 
   private isConnected(): boolean {

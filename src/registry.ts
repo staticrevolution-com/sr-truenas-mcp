@@ -94,7 +94,7 @@ const CATEGORIES: Record<string, string> = {
   certificate: "TLS certificates, ACME/Let's Encrypt, and DNS authenticators",
   alert: "System alerts and alert notification services (Slack, email, PagerDuty, etc.)",
   data_protection: "Replication, cloud sync, cloud backup, cron jobs, rsync, init/shutdown scripts, and SSH credentials",
-  filesystem: "Filesystem operations — stat, listdir, mkdir, permissions, ACLs, and ownership",
+  filesystem: "Filesystem operations — read/write file content, stat, listdir, mkdir, permissions, ACLs, and ownership",
   reporting: "System metrics — reporting config, available graphs, and time-series data",
   directory: "Directory services (Active Directory, LDAP) and Kerberos",
   service_config: "Service-specific configs — SSH, FTP, SNMP, UPS, and system tunables",

@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
+import { BUILD_VERSION } from "../version.js";
 
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
@@ -23,6 +24,28 @@ export function register(server: McpServer, client: TrueNASClient): void {
     {},
     async () => {
       const result = await client.call("system.version");
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "system_mcp_version",
+    "Get the version of THIS MCP server (sr-truenas-mcp) — not the TrueNAS version. Use it to confirm which build is actually deployed behind a gateway.",
+    {},
+    async () => {
+      // `system_version` reports the NAS; nothing reported the server itself,
+      // so "which build is running in production?" could only be answered by
+      // exec-ing into the backend container — and consequently was answered
+      // from memory and drifted. The binary has always known (`--version`);
+      // this makes the same string reachable over the tool plane.
+      const result = {
+        name: "sr-truenas-mcp",
+        version: BUILD_VERSION,
+        note:
+          BUILD_VERSION === "dev"
+            ? "Running unbundled (node dist/cli.js) — no build stamp was injected."
+            : "<package version>+<git short sha> at build time; '.dirty' marks an unclean tree.",
+      };
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

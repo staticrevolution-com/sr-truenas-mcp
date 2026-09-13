@@ -15,6 +15,8 @@ Live-deploy findings from TrueNAS 26.0.0-BETA.1 (2026-06-12): [`docs/FIELD-REPOR
 
 Field findings from a 2026-08-21 memory-pressure investigation (same box, still 26.0.0-BETA.1): [`docs/FIELD-REPORT-2026-08-21-reporting-and-diagnostics.md`](./docs/FIELD-REPORT-2026-08-21-reporting-and-diagnostics.md) — **open, no fixes landed**. `reporting_get_data`'s `start`/`end` cannot be satisfied in any form (Zod wants a string, middlewared wants an integer epoch, ISO 8601 is never converted), so the action only ever returns the last hour; `unit`/`page` are silently dropped; and the response returns ~3,600 raw points per graph when the `aggregations` block it already carries is what callers actually want. Two coverage gaps sit behind them: no kernel-log/`dmesg` action and no memory/swap/ARC summary — the ZFS-NAS-shaped hole. Ranked fixes and workarounds are in the report.
 
+Five defects hit live on 2026-09-13 (same box, still 26.0.0-BETA.1): [`docs/FIELD-REPORT-2026-09-13-live-defects.md`](./docs/FIELD-REPORT-2026-09-13-live-defects.md) — **four fixed, one upstream.** `snapshot_list` silently returned `[]` for populated datasets; `filesystem` could not read or write file content; `user_create` rejected TrueNAS's own default home; nothing reported the server's own version. `snapshot_task_run` is broken by a middleware bug fixed upstream in 27.0.0-BETA.1 and is not fixable here. The report states, per defect, whether the evidence is reproduced live, read from upstream source, or inferred.
+
 **Production deployment (current).** This server federates through `sr-mcp-gateway` (which replaced the decommissioned `sr-agentgateway`) as a **container-strategy backend** running a pinned `ghcr.io/staticrevolution-com/sr-truenas-mcp` tag. **The live pin is deliberately not recorded here** — read it from the gateway's own `GET /api/v1/backends/truenas`. This line previously named a version and drifted twice (it claimed `:v1.1.1` while the backend was actually on `:v1.1.2`), which is the failure mode naming it at all invites. Version-numbering note: v1.1.1 sits above an orphaned `:v1.1.0` image — a pre-2026-05-01-history-rewrite artifact with no backing git tag that production was previously pinned to. The field-report fixes were first cut as v1.0.1, then renumbered to v1.1.1 to sort above it; v1.0.1 is withdrawn. Full backstory in CHANGELOG `[1.1.1]`. The orphaned `:v1.1.0` and `:v1.0.1` GHCR image tags were deleted 2026-06-13; only `:v1.1.1`/`latest` and `:v1.0.0` remain tagged (plus untagged attestation/SBOM manifests).
 
 ## Conventions for AI-tooling sessions
@@ -48,7 +50,7 @@ GitHub releases include pre-built `sr-truenas-mcp-linux-x64.tar.gz` with SHA256 
 
 ## Architecture
 
-Single MCP tool (`truenas`) with hierarchical discovery: 270 active actions across 17 categories, exposed through 3 modes (list categories, list actions, execute).
+Single MCP tool (`truenas`) with hierarchical discovery: 273 active actions across 17 categories, exposed through 3 modes (list categories, list actions, execute).
 
 **Transport**: WebSocket JSON-RPC 2.0 (DDP protocol) at `wss://{host}/websocket`.
 
@@ -80,8 +82,8 @@ Single MCP tool (`truenas`) with hierarchical discovery: 270 active actions acro
 |------|------|-------|---------|
 | 0 — Blocked | Never registered | 8 | `system_reboot`, `truenas_api_call`, `cronjob_create` |
 | 1 — Confirm+Reason | `confirm: true` + `reason: "string"` | 20 | `pool_export`, `disk_wipe`, `dataset_delete`, `user_create`, `ssh_config_update` |
-| 2 — Confirm | `confirm: true` | 93 | `service_stop`, `snapshot_delete`, `smb_share_create`, `iscsi_extent_create`, `replication_run` |
-| 3 — Open | None | 157 | All reads, safe queries |
+| 2 — Confirm | `confirm: true` | 94 | `service_stop`, `snapshot_delete`, `smb_share_create`, `iscsi_extent_create`, `replication_run` |
+| 3 — Open | None | 159 | All reads, safe queries |
 
 Full tier assignments in `src/safety.ts`. 32 handlers also have in-handler `confirm` checks as defense-in-depth.
 
@@ -118,7 +120,7 @@ Handlers serialize their payload into `content[].text` *before* the registry see
 Two validators in `src/validation.ts`:
 
 - **`validateTrueNASPath(path)`** — for filesystem paths. Must start with `/mnt/`, no `..`, no null bytes. 24 call sites across `filesystem.ts`, `sharing.ts` (smb/nfs share `path`, iscsi extent file `path`), `replication.ts` (cloudsync/cloud_backup/rsync `path`), `network.ts` (user `home`), and `storage.ts` (`dataset_set_permissions` mountpoint).
-- **`validateDatasetName(name)`** — for ZFS dataset names (e.g. `tank/data`). Charset `[a-zA-Z0-9._:/-]`, max 255 chars, no `..`, no null bytes. 4 call sites: `dataset_create` (`storage.ts`), `replication_create` (`source_datasets[]` + `target_dataset`), and `replication_restore` (`target_dataset`). `dataset_create` additionally routes `/mnt/`-prefixed input through `validateTrueNASPath` for defense in depth.
+- **`validateDatasetName(name)`** — for ZFS dataset names (e.g. `tank/data`). Charset `[a-zA-Z0-9._:/-]`, max 255 chars, no `..`, no null bytes. 5 call sites: `dataset_create` and `snapshot_list` (`storage.ts`), `replication_create` (`source_datasets[]` + `target_dataset`), and `replication_restore` (`target_dataset`). `dataset_create` additionally routes `/mnt/`-prefixed input through `validateTrueNASPath` for defense in depth.
 
 Run `npm run audit:counts` to verify these numbers against the source.
 
@@ -197,6 +199,10 @@ Update: publish a new tagged release (CI builds the binary tarball + GHCR image)
 - SMART test initiation not available via WebSocket API. Results available through `disk.query`.
 - `dataset_set_permissions` uses `filesystem.setperm` since `pool.dataset.permission` doesn't exist in WebSocket API.
 - `config.save` requires a binary pipe — handler returns informational message directing to TrueNAS web UI.
+- **There is no way to delete a file.** Not a gap in this server — the middleware has no unlink-equivalent at all. Verified by enumerating every method `core.get_methods` reports on TrueNAS 26.0.0-BETA.1 (781 of them): nothing removes a single file. `dataset_delete` destroys a whole dataset, and the web shell is the only other route. Don't go looking for the method; it isn't there.
+- File content transfer (`filesystem_get` / `filesystem_put`) does not travel over the WebSocket. Both underlying methods are pipe-based `@job`s, so the server also speaks HTTPS to `/_upload` and `/_download` on the same host and port — see `src/file-transfer.ts`. A deployment that reaches the WebSocket but not port 444 over HTTPS will find these two actions failing while everything else works.
+- Single transfers are capped at 16 MiB in either direction, with `filesystem_get` defaulting to 1 MiB. The limit is the context window, not the NAS.
+- `snapshot_task_run` cannot work on TrueNAS 26.0 — an upstream middleware bug. The action returns a diagnosis rather than a bare `[EINVAL]`; see the 2026-09-13 field report.
 - `npm audit` reports 0 vulnerabilities as of B6 (transitive `hono`/`postcss` bumps via `npm audit fix`; lockfile only).
 
 

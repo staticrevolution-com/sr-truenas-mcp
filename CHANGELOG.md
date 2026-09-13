@@ -5,6 +5,106 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-09-13
+
+Five defects hit in a single live operator session against TrueNAS
+26.0.0-BETA.1 — four fixed here, one upstream. Full write-up, including which
+findings were reproduced live versus read from upstream source versus inferred:
+`docs/FIELD-REPORT-2026-09-13-live-defects.md`.
+
+Minor rather than patch: three actions are added
+(`filesystem_get`, `filesystem_put`, `system_mcp_version`), taking the
+registered surface from 270 to 273. No existing call's behaviour changes except
+`snapshot_list`, which now returns the rows it should always have returned.
+
+### Added
+
+- **`filesystem_get` (tier 3) and `filesystem_put` (tier 2).** The category
+  could describe a file but never read or write its contents, which pushed
+  operators onto SMB with admin credentials and onto the web shell — an
+  ergonomic gap with a security outcome. `filesystem.get` / `filesystem.put`
+  are pipe-based `@job` methods and are therefore not callable over the
+  WebSocket, so the server now also speaks HTTPS to middlewared's `/_upload`
+  and `/_download` endpoints (`src/file-transfer.ts`). Transfers are capped at
+  16 MiB, with `filesystem_get` defaulting to 1 MiB; the binding limit is the
+  context window, not the NAS.
+
+  `filesystem_get` returns UTF-8 text only when the bytes round-trip cleanly and
+  base64 otherwise, so binary content is never silently mangled into U+FFFD.
+  `filesystem_put` validates `content_base64` before writing (Node discards
+  invalid base64 characters rather than throwing, which would produce a
+  truncated file reported as complete) and stats the file back afterwards, the
+  same post-write verification `filesystem_mkdir` gained in 1.1.1.
+
+- **`system_mcp_version` (tier 3)** reports *this server's* build, as distinct
+  from `system_version`, which reports the NAS. `BUILD_VERSION` was already
+  embedded and printed by `--version`, but nothing exposed it over the tool
+  plane, so "which build is actually deployed?" could only be answered by
+  exec-ing into the backend container — and was therefore answered from memory,
+  and drifted twice. Answerable even when TrueNAS is unreachable, which is
+  when it is most needed.
+
+### Fixed
+
+- **`snapshot_list` sent no dataset filter to the server.** It applied the
+  caller's `limit`/`offset` server-side and *then* filtered by dataset in the
+  client, so the page was drawn from every snapshot on the pool and only
+  afterwards narrowed. On a pool holding 2513 snapshots, `limit: 50` returned
+  `[]` for a dataset with 21 — and returned rows whenever that dataset happened
+  to fall inside the fetched page, which is the entire reported "intermittency".
+  An empty result reads as a clean negative, so any existence check built on
+  this action was unsound. The filter now goes to the server, where it has
+  always worked; responses shrink accordingly.
+
+  This had been recorded as a middleware defect. It was not: the middleware
+  filter is correct and always was.
+
+- **`user_create` / `user_update` rejected `/var/empty`,** the home directory
+  TrueNAS itself assigns when `home` is omitted, and the value it uses for
+  service and SMB-only accounts. The `/mnt/` guard is right for dataset and
+  share paths and was applied one parameter too wide. `validateHomeDirectory`
+  now mirrors the middleware's own rule — `/var/empty`, or an absolute path
+  under `/mnt/` that is not the root of `/mnt` — while keeping the traversal,
+  NUL-byte and colon checks. `validateTrueNASPath` is unchanged elsewhere.
+
+- **`snapshot_task_run` now explains why it cannot work** instead of surfacing
+  a bare `[EINVAL] 'PeriodicSnapshotTaskQueryResultItem' object is not
+  subscriptable`, which reads like a caller mistake. It is an upstream Python
+  `TypeError`: `pool.snapshottask.run` subscripts a value that is a pydantic
+  model on this release. Fixed upstream in middleware commit `b237df99`
+  (NAS-140147, 27.0.0-BETA.1); nothing here can make the 26.0 call succeed. The
+  action now raises a diagnosis naming the cause, the upstream fix version, the
+  task's own configuration, and — critically — the constraint on the manual
+  workaround.
+
+  No automatic fallback to `snapshot_create` was added, deliberately. Retention
+  is name-derived, not creator-derived: zettarepl owns a snapshot only if its
+  name parses against the task's `naming_schema` *and* the encoded timestamp
+  falls on a slot the schedule would have fired. A snapshot created "now" is
+  owned by no task and is pruned by no lifetime, so a helpful fallback would
+  silently fill the pool. A fallback that fills a pool is worse than an error.
+
+### Documented
+
+- **File deletion is impossible through this API**, and that is now stated
+  rather than left as an apparent gap in this server. All 781 methods
+  `core.get_methods` reports on 26.0.0-BETA.1 were enumerated and searched:
+  there is no unlink-equivalent under any name. `dataset_delete` destroys a
+  whole dataset; the web shell is the only other route. A shell-exec workaround
+  would render every other safety tier cosmetic and was rejected.
+
+### Where the live evidence stops
+
+For `filesystem_get` / `filesystem_put`, the `core.download` call shape, the
+returned job handle, the job poll and error propagation were all exercised
+against a live 26.0.0-BETA.1 system (a request for a nonexistent path returned
+`Job 344225 failed: [EFAULT] … is not a file`). **The HTTP leg was not:** no
+bytes were fetched from `/_download` and nothing was posted to `/_upload`,
+because production writes were outside the authorisation of the session that
+wrote this. Those two paths rest on unit tests plus a reading of the upstream
+handlers. Everything else in this release was reproduced against the live
+system.
+
 ## [1.2.1] — 2026-08-21
 
 Patch: completes the 2026-08-21 field report. Additive parameters only — no

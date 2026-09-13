@@ -111,12 +111,12 @@ describe("Safety tier map", () => {
     expect(tier2.length).toBeLessThanOrEqual(110);
   });
 
-  it("tier map has 278 total entries (all actions classified)", () => {
-    expect(tieredActions.size).toBe(278);
+  it("tier map has 281 total entries (all actions classified)", () => {
+    expect(tieredActions.size).toBe(281);
   });
 
-  it("registered actions = 278 - 8 blocked = 270", () => {
-    expect(registeredActions.size).toBe(270);
+  it("registered actions = 281 - 8 blocked = 273", () => {
+    expect(registeredActions.size).toBe(273);
   });
 
   it("every tier value is a valid SafetyTier", () => {
