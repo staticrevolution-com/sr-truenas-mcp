@@ -578,15 +578,22 @@ export function register(server: McpServer, client: TrueNASClient): void {
       offset: z.number().optional().describe("Offset for pagination"),
     },
     async ({ dataset, limit, offset }) => {
+      // The dataset filter MUST go to the server. It used to be applied
+      // client-side while `limit`/`offset` were applied server-side, so the
+      // page was selected from ALL snapshots and only then narrowed to the
+      // dataset — `limit: 50` against a pool holding thousands of snapshots
+      // returned `[]` for a dataset that demonstrably had 21. It "worked"
+      // only when the dataset happened to fall inside the fetched page,
+      // which made an existence check look like a clean negative.
       const queryFilters: unknown[] = [];
+      if (dataset !== undefined) {
+        queryFilters.push(["dataset", "=", validateDatasetName(dataset)]);
+      }
       const queryOptions: Record<string, unknown> = {};
       if (limit !== undefined) queryOptions.limit = limit;
       if (offset !== undefined) queryOptions.offset = offset;
       const result = await client.call("pool.snapshot.query", [queryFilters, queryOptions]);
-      let snapshots = Array.isArray(result) ? result : [result];
-      if (dataset) {
-        snapshots = snapshots.filter((s: any) => s.dataset === dataset);
-      }
+      const snapshots = Array.isArray(result) ? result : [result];
       return { content: [{ type: "text", text: JSON.stringify(snapshots, null, 2) }] };
     },
   );
@@ -743,11 +750,110 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "snapshot_task_run",
-    "Run a periodic snapshot task immediately",
+    "Run a periodic snapshot task immediately. NOTE: broken by an upstream middleware bug on TrueNAS 26.0 — see the error text if it fails.",
     { id: z.number().describe("Snapshot task ID") },
     async ({ id }) => {
-      const result = await client.call("pool.snapshottask.run", [id]);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      try {
+        const result = await client.call("pool.snapshottask.run", [id]);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!isNotSubscriptableError(message)) throw err;
+        throw new Error(await describeSnapshotTaskRunBug(client, id, message));
+      }
     },
   );
+}
+
+/**
+ * Recognise the upstream TrueNAS 26.0 `pool.snapshottask.run` failure.
+ *
+ * middlewared surfaces the Python `TypeError` as `[EINVAL] ... object is not
+ * subscriptable`, which reads like a caller mistake. It is not — no argument
+ * makes the call succeed on an affected release. Matching on the phrase rather
+ * than the model name keeps this working if the model is renamed.
+ */
+function isNotSubscriptableError(message: string): boolean {
+  return message.includes("not subscriptable");
+}
+
+/**
+ * Turn the opaque EINVAL into an actionable diagnosis.
+ *
+ * The upstream defect, read from `plugins/snapshot.py` on the
+ * `release/26.0.0-BETA.1` branch:
+ *
+ *     task = await self.get_instance(id_)
+ *     if not task["enabled"]:      # a pydantic model, not a dict
+ *
+ * `pool.snapshottask` is declared `CRUDService[PeriodicSnapshotTaskEntry]`, so
+ * `get_instance` returns a model; subscripting it raises `TypeError`. Fixed
+ * upstream in commit b237df99 (NAS-140147, 27.0.0-BETA.1), which rewrote the
+ * body to `task.enabled` / `task.id`.
+ *
+ * ⚠ The manual workaround carries a trap, so it is spelled out rather than
+ * merely named. zettarepl decides which snapshots a task's retention owns via
+ * `PeriodicSnapshotTaskSnapshotOwner.owns_snapshot`, which requires
+ * `schedule.should_run()` to accept the timestamp parsed out of the snapshot
+ * NAME. A snapshot created with `snapshot_create` at an arbitrary moment is
+ * therefore owned by no task and is never pruned by the lifetime — it
+ * accumulates silently. The name must both match `naming_schema` and encode a
+ * moment the schedule would have fired.
+ *
+ * The task's own configuration is fetched best-effort so the caller does not
+ * have to go and look it up; failure to fetch it degrades the message, not the
+ * diagnosis.
+ */
+async function describeSnapshotTaskRunBug(
+  client: TrueNASClient,
+  id: number,
+  original: string,
+): Promise<string> {
+  const lines = [
+    `snapshot_task_run is unavailable on this TrueNAS release — this is an upstream middleware bug, not a bad request.`,
+    ``,
+    `Server error: ${original}`,
+    ``,
+    `Cause: pool.snapshottask.run does \`task["enabled"]\` on a value that is now a`,
+    `pydantic model rather than a dict, so it raises TypeError before doing any work.`,
+    `No combination of arguments makes it succeed. Fixed upstream in TrueNAS`,
+    `27.0.0-BETA.1 (middleware commit b237df99, NAS-140147); on 26.0 the only`,
+    `remedies are to upgrade or to take the snapshot by hand.`,
+    ``,
+    `The task itself is unaffected — its schedule keeps running normally. Only`,
+    `run-it-now is broken.`,
+  ];
+
+  let task: Record<string, unknown> | undefined;
+  try {
+    const rows = await client.call("pool.snapshottask.query", [[["id", "=", id]]]);
+    if (Array.isArray(rows) && rows.length > 0 && typeof rows[0] === "object") {
+      task = rows[0] as Record<string, unknown>;
+    }
+  } catch {
+    // Best-effort enrichment only.
+  }
+
+  lines.push(``, `Manual workaround — use snapshot_create, but read this first:`);
+  if (task) {
+    lines.push(
+      `  dataset:       ${JSON.stringify(task.dataset)}`,
+      `  recursive:     ${JSON.stringify(task.recursive)}`,
+      `  naming_schema: ${JSON.stringify(task.naming_schema)}`,
+      `  schedule:      ${JSON.stringify(task.schedule)}`,
+    );
+  } else {
+    lines.push(`  (call snapshot_task_list for this task's dataset, naming_schema and schedule)`);
+  }
+  lines.push(
+    ``,
+    `⚠ Retention is name-derived, not creator-derived. This task's lifetime only`,
+    `prunes a snapshot whose name matches naming_schema AND whose encoded timestamp`,
+    `falls on a slot the schedule would have fired. A snapshot named for "now" is`,
+    `owned by no task and will never be pruned — it accumulates until someone`,
+    `notices the pool. Expand naming_schema at a scheduled time, or delete the`,
+    `snapshot yourself when you are done with it.`,
+  );
+
+  return lines.join("\n");
 }

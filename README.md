@@ -1,7 +1,7 @@
 # sr-truenas-mcp
 
 A hardened [Model Context Protocol](https://modelcontextprotocol.io/) server
-for [TrueNAS SCALE](https://www.truenas.com/truenas-scale/). 270
+for [TrueNAS SCALE](https://www.truenas.com/truenas-scale/). 273
 safety-tiered actions across 17 categories of TrueNAS surface, exposed
 through a single hierarchical MCP tool over WebSocket JSON-RPC 2.0.
 
@@ -59,7 +59,7 @@ and dataset-name validation, and wrote a test suite. See
 
 ## What it does
 
-270 actions across 17 categories. The full surface (with safety tiers)
+273 actions across 17 categories. The full surface (with safety tiers)
 is documented at runtime via the `truenas` tool's discovery modes; the
 short version:
 
@@ -93,8 +93,8 @@ for the official Research Preview's narrower surface.
 Three things, in roughly the order they matter:
 
 **Single hierarchical tool.** The MCP server registers one tool — `truenas` —
-not 270. The model spends prompt budget on one tool definition (~200
-tokens) instead of 270 separate JSON Schemas. Action discovery is a
+not 273. The model spends prompt budget on one tool definition (~200
+tokens) instead of 273 separate JSON Schemas. Action discovery is a
 runtime call (`truenas({ mode: "list_categories" })` →
 `truenas({ category: "storage" })` → `truenas({ category: "storage",
 action: "dataset_create", ... })`). For a session that uses ten different
@@ -336,7 +336,7 @@ Short version (full detail in [`COMPARISON.md`](COMPARISON.md)):
 | | sr-truenas-mcp | spranab/truenas-mcp | truenas/truenas-mcp |
 |---|---|---|---|
 | **Transport** | WebSocket | REST | WebSocket |
-| **Action coverage** | 270 (17 categories) | ~278 (18 categories) | 52 flat tools |
+| **Action coverage** | 273 (17 categories) | ~278 (18 categories) | 52 flat tools |
 | **ZFS dataset ops** | Full CRUD + snapshots | Full CRUD + snapshots | `create_dataset` and `query_datasets` only |
 | **Safety model** | 4-tier, centralized | Per-handler `confirm` | Dry-run preview |
 | **Response filtering** | Centralized 3-layer | None | Per-handler hand-crafted masking |

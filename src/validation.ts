@@ -71,3 +71,59 @@ export function validateDatasetName(name: string): string {
   }
   return name;
 }
+
+/**
+ * The home directory TrueNAS itself assigns when `home` is omitted. Service
+ * accounts and SMB-only accounts keep this value — it is an empty, immutable
+ * directory that deliberately lives outside `/mnt/`.
+ *
+ * Mirrors `DEFAULT_HOME_PATH` in the middleware
+ * (`plugins/account_/constants.py`).
+ */
+export const DEFAULT_HOME_PATH = "/var/empty";
+
+/**
+ * Validate a user account's `home` directory.
+ *
+ * This is deliberately NOT `validateTrueNASPath`. That validator is correct for
+ * dataset and share paths, which must live under a mounted pool — but applying
+ * it to `home` rejected `/var/empty`, i.e. the value TrueNAS itself stores when
+ * the caller omits `home` entirely. Creating a service account therefore
+ * succeeded only by *not* naming the home directory the product was about to
+ * use anyway.
+ *
+ * The rule enforced here is the middleware's own
+ * (`account.validate_homedir_path`): the path must be `/var/empty`, or an
+ * absolute path under `/mnt/` that is not the root of `/mnt` itself. Colons are
+ * rejected upstream too. Traversal and NUL checks are kept from
+ * `validateTrueNASPath`.
+ *
+ * Returns the (normalized) home path or throws.
+ */
+export function validateHomeDirectory(home: string): string {
+  if (!home || typeof home !== "string") {
+    throw new Error("Home directory is required and must be a string");
+  }
+  if (home.includes("\0")) {
+    throw new Error("Home directory must not contain null bytes");
+  }
+  if (home === DEFAULT_HOME_PATH) return home;
+  if (home.includes(":")) {
+    throw new Error('Home directory must not contain colons (":")');
+  }
+
+  const normalized = home.replace(/\/+/g, "/").replace(/\/\.$/, "").replace(/\/\.\//g, "/");
+
+  if (normalized.includes("..")) {
+    throw new Error("Home directory must not contain '..' (path traversal)");
+  }
+  if (normalized === "/mnt" || normalized === "/mnt/") {
+    throw new Error('Home directory cannot be the root of "/mnt"');
+  }
+  if (!normalized.startsWith("/mnt/")) {
+    throw new Error(
+      `Home directory must start with /mnt/ or be "${DEFAULT_HOME_PATH}" (the TrueNAS default for accounts without a home directory)`,
+    );
+  }
+  return normalized;
+}

@@ -4,6 +4,7 @@ import { TrueNASClient } from "../client.js";
 import { validateTrueNASPath } from "../validation.js";
 import { parseEpochSeconds, shapeReportingResult } from "../reporting.js";
 import { awaitJobResult } from "../job-utils.js";
+import { DEFAULT_DOWNLOAD_BYTES, MAX_TRANSFER_BYTES } from "../file-transfer.js";
 
 /**
  * `reporting.get_data` requires integer epoch seconds. The tool schema used to
@@ -76,6 +77,133 @@ export function register(server: McpServer, client: TrueNASClient): void {
           `filesystem.mkdir reported success but post-write verification failed — '${validPath}' does not exist (is the parent dataset mounted?): ${detail}`
         );
       }
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "filesystem_get",
+    "Read the CONTENT of a file. Returns UTF-8 text when the file is text, base64 otherwise. Use filesystem_stat first to check the size — large files are refused, not truncated silently.",
+    {
+      path: z.string().describe("Full path of the file to read, e.g. '/mnt/tank/data/notes.txt'"),
+      max_bytes: z
+        .number()
+        .int()
+        .positive()
+        .max(MAX_TRANSFER_BYTES)
+        .optional()
+        .describe(
+          `Refuse to read more than this many bytes (default ${DEFAULT_DOWNLOAD_BYTES}, hard ceiling ${MAX_TRANSFER_BYTES})`,
+        ),
+      encoding: z
+        .enum(["auto", "utf8", "base64"])
+        .optional()
+        .default("auto")
+        .describe("'auto' returns text when the bytes decode cleanly as UTF-8, else base64"),
+    },
+    async ({ path, max_bytes, encoding }) => {
+      const validPath = validateTrueNASPath(path);
+      const limit = max_bytes ?? DEFAULT_DOWNLOAD_BYTES;
+      const bytes = await client.getFileContent(validPath, limit);
+
+      // `auto` decides by round-tripping rather than by sniffing: if the bytes
+      // survive a UTF-8 decode/encode unchanged they are text, and if they do
+      // not, Buffer's lossy decode would have silently replaced them with
+      // U+FFFD and handed back a corrupted "success".
+      let asText: string | undefined;
+      if (encoding !== "base64") {
+        const decoded = bytes.toString("utf8");
+        if (encoding === "utf8" || Buffer.from(decoded, "utf8").equals(bytes)) {
+          asText = decoded;
+        }
+      }
+
+      const result =
+        asText !== undefined
+          ? { path: validPath, size: bytes.length, encoding: "utf8", content: asText }
+          : {
+              path: validPath,
+              size: bytes.length,
+              encoding: "base64",
+              content: bytes.toString("base64"),
+            };
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "filesystem_put",
+    "Write CONTENT to a file, creating it or overwriting it. Provide exactly one of 'content' (UTF-8 text) or 'content_base64' (binary). Overwrites by default — set append to add to the end instead.",
+    {
+      path: z.string().describe("Full path of the file to write"),
+      content: z.string().optional().describe("UTF-8 text to write"),
+      content_base64: z.string().optional().describe("Base64-encoded bytes to write (for binary files)"),
+      append: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Append to the file instead of replacing its contents (default: false)"),
+      mode: z
+        .string()
+        .optional()
+        .describe("UNIX permission mode for the file, e.g. '644'. Omit to use the system default."),
+    },
+    async ({ path, content, content_base64, append, mode }) => {
+      const validPath = validateTrueNASPath(path);
+
+      // Requiring exactly one avoids the ambiguity of a caller that sets both
+      // and gets whichever the implementation happened to prefer.
+      if ((content === undefined) === (content_base64 === undefined)) {
+        throw new Error("Provide exactly one of 'content' or 'content_base64'.");
+      }
+
+      let bytes: Buffer;
+      if (content !== undefined) {
+        bytes = Buffer.from(content, "utf8");
+      } else {
+        bytes = Buffer.from(content_base64 as string, "base64");
+        // Buffer.from(..., "base64") ignores invalid characters rather than
+        // throwing, so a mangled payload would be written as a short file.
+        // Re-encoding and comparing lengths catches that before the write.
+        if (bytes.toString("base64").replace(/=+$/, "") !==
+            (content_base64 as string).replace(/[\r\n\s]/g, "").replace(/=+$/, "")) {
+          throw new Error("'content_base64' is not valid base64 — refusing to write a truncated file.");
+        }
+      }
+
+      if (bytes.length > MAX_TRANSFER_BYTES) {
+        throw new Error(
+          `Refusing to write ${bytes.length} bytes: the limit is ${MAX_TRANSFER_BYTES} (16 MiB).`
+        );
+      }
+
+      const modeValue = mode === undefined ? null : parseInt(mode, 8);
+      if (modeValue !== null && (Number.isNaN(modeValue) || modeValue < 0 || modeValue > 0o7777)) {
+        throw new Error(`Invalid mode ${JSON.stringify(mode)} — expected an octal string such as '644'.`);
+      }
+
+      const job = await client.putFileContent(validPath, bytes, { append, mode: modeValue });
+
+      // filesystem.put reports success even where the parent dataset is not
+      // mounted, exactly as filesystem_mkdir does on this release — stat back
+      // so a write into nothing is not reported as a write.
+      let verified: unknown;
+      try {
+        verified = await client.call("filesystem.stat", [validPath]);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `filesystem.put reported success but post-write verification failed — '${validPath}' does not exist (is the parent dataset mounted?): ${detail}`
+        );
+      }
+
+      const result = {
+        path: validPath,
+        bytes_written: bytes.length,
+        append,
+        job_state: job.state,
+        stat: verified,
+      };
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
