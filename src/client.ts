@@ -451,12 +451,24 @@ export class TrueNASClient {
     while (Date.now() - start < timeoutMs) {
       const remaining = timeoutMs - (Date.now() - start);
 
-      // If the ws isn't connected, sleep first and let the next call()
-      // attempt the reconnect through its normal path. Avoids back-to-back
-      // reconnect storms when TrueNAS is down.
+      // If the ws isn't connected, sleep BEFORE reconnecting so a down
+      // TrueNAS cannot produce back-to-back reconnect storms — the backoff
+      // does the throttling.
+      //
+      // This used to skip the reconnect entirely and "let the next call()
+      // reconnect through its normal path". That assumed some other caller
+      // would eventually issue a call, which is false on the upload path:
+      // `putFileContent` reaches middlewared over HTTP (`/_upload`) and may
+      // never have opened the WebSocket at all, so the loop spun for the full
+      // timeout and reported a write that had in fact already succeeded.
       if (!this.isConnected()) {
         await sleep(Math.min(delay, remaining));
         delay = nextPollDelay(delay);
+        try {
+          await this.connect();
+        } catch {
+          // Stay in the loop; the next iteration backs off further.
+        }
         continue;
       }
 
@@ -532,6 +544,12 @@ export class TrueNASClient {
     content: Buffer,
     options: { append?: boolean; mode?: number | null } = {},
   ): Promise<JobResult> {
+    // Open the WebSocket before sending any bytes. The upload itself is pure
+    // HTTP, but the job it enqueues can only be awaited over the WebSocket —
+    // and connecting first also fails fast on bad credentials instead of
+    // after pushing a payload the server will drop.
+    await this.connect();
+
     const jobId = await uploadToPipe(
       { baseUrl: this.baseUrl, apiKey: this.apiKey, verifySsl: this.verifySsl },
       "filesystem.put",

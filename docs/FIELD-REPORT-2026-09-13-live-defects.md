@@ -24,23 +24,16 @@ says which of these it rests on:
 | **Read from upstream source** | The cause was read in the TrueNAS middleware tree at `origin/release/26.0.0-BETA.1` — the exact branch this box runs — or in `truenas/zettarepl`. |
 | **Inferred** | Concluded from observable behaviour without reading the authoritative record. Named as such, with the check that *would* settle it. |
 
-**Where the live evidence stops, for `filesystem_get` / `filesystem_put`.** The
-`core.download` handshake and the job lifecycle *were* exercised against the
-running system: requesting a path that does not exist minted a real job and
-surfaced its failure correctly —
+**Every defect in this report was reproduced against the live system, and
+`filesystem_get` / `filesystem_put` were exercised end-to-end against a purpose-made
+scratch dataset on 2026-09-15** (created and destroyed for the test; see §2). Nine
+checks, all passing in 6.1 seconds: UTF-8 round-trip including non-ASCII, append,
+overwrite, a 256-byte binary round-trip covering every byte value, octal `mode`,
+the `max_bytes` abort and a larger cap succeeding, parent-directory auto-creation,
+and the confirm gate refusing an unconfirmed write.
 
-```
-getFileContent("/mnt/<nonexistent>/nope.txt")
-  ->  Job 344225 failed: [EFAULT] /mnt/<nonexistent>/nope.txt is not a file
-```
-
-— which proves the call shape, the returned `[job_id, url]` handle, the job
-poll, and error propagation. What is **not** exercised live is the HTTP leg
-itself: no bytes were fetched from `/_download` and nothing was posted to
-`/_upload`, because a write to production TrueNAS was outside this session's
-authorisation and no scratch dataset was created. Those two paths rest on unit
-tests plus a reading of the upstream handlers. The distinction should survive
-into the release notes.
+That exercise was worth insisting on: **it found a bug that the unit tests could
+not**, described in §6.
 
 ---
 
@@ -89,7 +82,7 @@ you control.
 
 ## 2. `filesystem` could not read or write file content
 
-**Evidence: middleware surface enumerated live (781 methods); `core.download` handshake and job lifecycle exercised live; HTTP leg read from upstream source only. Fixed (put/get). Delete is impossible.**
+**Evidence: middleware surface enumerated live (781 methods); both actions exercised end-to-end against a live scratch dataset. Fixed (put/get). Delete is impossible.**
 
 The category exposed `stat`, `listdir`, `mkdir`, `set_permissions`, `get_acl`,
 `set_acl`, `chown` — everything *about* a file and nothing *in* it. Uploading an
@@ -140,9 +133,22 @@ Three deliberate refusals rather than conveniences:
 - **`content_base64` is validated before the write.** `Buffer.from(s, "base64")`
   discards invalid characters instead of throwing, so a mangled payload would
   otherwise become a short file reported as a complete one.
-- **`filesystem_put` stats the file back.** This mirrors the `filesystem_mkdir`
-  finding from the 2026-06-12 report: a write into an unmounted parent dataset
-  reports success and leaves nothing on disk.
+- **`filesystem_put` stats the file back**, so an enqueued-but-ineffective write
+  is not reported as a write, and the caller gets the resulting size and mode.
+
+⚠ **Two things the live run corrected about that last point**, both of which had
+been asserted from a reading of the code rather than measured:
+
+- `filesystem.put` calls `os.makedirs()` for a missing parent, so a **missing
+  directory is created, not refused.** A typo in a path silently produces a new
+  directory tree — and since nothing can delete a file, the only clean undo is
+  destroying the dataset. Worth knowing before pointing this at a real pool.
+- The stat-back therefore does **not** reproduce the `filesystem_mkdir`
+  unmounted-dataset guard, as this report originally claimed. Under an unmounted
+  dataset the bytes land on the underlying filesystem at the same path, `stat`
+  succeeds, and the file vanishes when the dataset mounts. Catching that needs
+  the written file's `mount_id` compared against the dataset's own; that is not
+  implemented, and is recorded here rather than quietly overstated.
 
 The 16 MiB ceiling is about the context window, not the NAS. It exists so that
 "read me this disk image" fails immediately and cheaply.
@@ -267,7 +273,7 @@ the retention constraint in full. Unrelated errors pass through untouched.
 
 ## 5. Nothing reported this server's own version
 
-**Evidence: the deployed build is inferred, not read. Gate added.**
+**Evidence: inferred first, then confirmed against the authoritative record. Gate added.**
 
 The premise this started from was that production ran a pinned `:v1.1.1` while
 master was `1.2.1` — that shipped fixes were sitting undeployed and the release
@@ -280,10 +286,23 @@ path had rotted. Both halves are false:
   three-hour window where `page: 1` yields one hour). Both present implies
   ≥ v1.2.1, which is master.
 
-**Scope of that claim, stated because it matters:** this is *behavioural
-inference through the tool plane, not a read of the backend's image pin.* The
-authoritative check is `GET /api/v1/backends/truenas` on the gateway's admin
-plane, which requires an admin credential this work did not have.
+That was *behavioural inference through the tool plane, not a read of the image
+pin* — recorded as such rather than as a fact, because the whole reason this
+defect exists is that the pin had been asserted from memory three times and was
+wrong each time.
+
+**Confirmed 2026-09-15** against the authoritative record,
+`GET /api/v1/backends/truenas` on the gateway's admin plane:
+
+```
+runtime_image: ghcr.io/staticrevolution-com/sr-truenas-mcp:v1.2.1
+```
+
+The inference was right, and the pin is exactly master. Note what the three prior
+claims had been: a peer session said `:v1.1.1`, this project's session memory said
+`:v1.1.2`, and this repository's `CLAUDE.md` records the pin having drifted twice
+before that. None of those sources would ever have contradicted each other; only
+reading the record settled it.
 
 The real defect is that the question needed inferring at all. `BUILD_VERSION`
 has always existed and `--version` prints it, but nothing exposed it over the
@@ -298,6 +317,44 @@ nothing checking it decays into a claim; this is the check.
 
 ---
 
+## 6. What the live exercise found that the unit tests could not
+
+**Evidence: reproduced live; fixed; regression-gated.**
+
+The first end-to-end run failed every write — and the files were on disk, correct,
+every time. `core.get_jobs` showed each job `SUCCESS`, finished in the same second
+it started. Three uploads, three reported timeouts, three correct files.
+
+The cause was in `waitForJob`, and its comment described the assumption exactly:
+
+```
+// If the ws isn't connected, sleep first and let the next call()
+// attempt the reconnect through its normal path.
+```
+
+That holds only if some later caller issues a `call()`. On the upload path nobody
+does: `putFileContent` reaches middlewared over **HTTP** (`/_upload`), so a client
+whose WebSocket had never been opened would sit in that branch until the timeout
+expired — reporting failure for a write that had already succeeded.
+
+Two fixes. `waitForJob` now attempts the reconnect itself after the backoff sleep
+(the sleep, not the deferral, is what prevents reconnect storms), and
+`putFileContent` opens the WebSocket before sending any bytes, which also fails
+fast on bad credentials instead of after pushing a payload.
+
+🔑 **Why no test caught it.** Every existing `waitForJob` test begins with
+`await client.connect()`, and every unit test of the new actions stubs the client
+entirely. The one precondition that mattered — *nothing has connected yet* — was
+the one no test established. The regression gate deliberately omits the `connect()`
+call, and was confirmed to fail against the unfixed client before being kept.
+
+This is the practical argument for exercising a write path against a real system:
+the defect was not in the protocol work, which was correct, but in an assumption
+about call ordering that only holds when something else has already run. A stub
+that answers every call cannot express "nothing has happened yet".
+
+---
+
 ## Summary
 
 | # | Defect | Evidence | Outcome |
@@ -306,7 +363,8 @@ nothing checking it decays into a claim; this is the check.
 | 2 | no file content read/write | surface enumerated live; HTTP contract from source; transfers not live-exercised | `filesystem_get` + `filesystem_put` added; **delete impossible, documented** |
 | 3 | `/mnt/` guard applied to `home` | reproduced live | fixed — `validateHomeDirectory` |
 | 4 | `snapshot_task_run` EINVAL | reproduced live + upstream source | upstream bug; actionable diagnosis added |
-| 5 | own version unreportable | inferred | `system_mcp_version` added |
+| 5 | own version unreportable | **confirmed** — backend pin read as `:v1.2.1` | `system_mcp_version` added |
+| 6 | `waitForJob` never reconnected on the upload path | reproduced live | fixed + regression-gated |
 
 Three of the five were quiet failures — an empty list, a rejected-but-valid
 value, and a version nobody could check. None of them errored in a way that
