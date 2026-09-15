@@ -93,17 +93,55 @@ registered surface from 270 to 273. No existing call's behaviour changes except
   whole dataset; the web shell is the only other route. A shell-exec workaround
   would render every other safety tier cosmetic and was rejected.
 
-### Where the live evidence stops
+### Also fixed — found only by the live exercise
 
-For `filesystem_get` / `filesystem_put`, the `core.download` call shape, the
-returned job handle, the job poll and error propagation were all exercised
-against a live 26.0.0-BETA.1 system (a request for a nonexistent path returned
-`Job 344225 failed: [EFAULT] … is not a file`). **The HTTP leg was not:** no
-bytes were fetched from `/_download` and nothing was posted to `/_upload`,
-because production writes were outside the authorisation of the session that
-wrote this. Those two paths rest on unit tests plus a reading of the upstream
-handlers. Everything else in this release was reproduced against the live
-system.
+- **`waitForJob` could spin until timeout without ever connecting.** Its
+  not-connected branch skipped the reconnect and deferred to "the next
+  `call()`", which assumes some later caller issues one. On the upload path
+  nobody does: `putFileContent` reaches middlewared over HTTP (`/_upload`), so a
+  client whose WebSocket had never been opened sat in that branch for the whole
+  timeout — **reporting failure for writes that had already succeeded on disk.**
+  Measured against 26.0.0-BETA.1: three uploads, three correct files, three
+  `SUCCESS` job records, three reported timeouts.
+
+  `waitForJob` now reconnects itself after the backoff sleep (the sleep, not the
+  deferral, is what prevents reconnect storms), and `putFileContent` opens the
+  WebSocket before sending any bytes, which also fails fast on bad credentials.
+
+  Every pre-existing `waitForJob` test began with `await client.connect()`, and
+  the new actions' unit tests stub the client entirely — so the one precondition
+  that mattered, *nothing has connected yet*, was the one no test established.
+  The regression gate omits `connect()` deliberately, and was confirmed to fail
+  against the unfixed client before being kept.
+
+### Corrections the live exercise forced
+
+Two claims in the first draft of this release were asserted from reading the
+upstream code rather than measured, and were wrong:
+
+- **`filesystem_put` creates missing parent directories.** `filesystem.put`
+  calls `os.makedirs()`, so a mistyped path silently produces a directory tree
+  instead of an error — and with no file-delete method available, the only clean
+  undo is destroying the dataset.
+- **The post-write `stat` does not detect a write beneath an unmounted
+  dataset.** The bytes land on the underlying filesystem at the same path, so
+  `stat` succeeds and the file vanishes when the dataset mounts. Detecting that
+  needs a `mount_id` comparison against the dataset; not implemented, and now
+  documented as a limitation rather than implied to be covered.
+
+### Verified against a live system
+
+Every fix in this release was reproduced against TrueNAS 26.0.0-BETA.1.
+`filesystem_get` / `filesystem_put` were exercised end-to-end against a
+purpose-made scratch dataset (created and destroyed for the test): nine checks
+passing — UTF-8 round-trip with non-ASCII, append, overwrite, a 256-byte binary
+round-trip covering every byte value, octal `mode`, the `max_bytes` abort plus a
+larger cap succeeding, parent auto-creation, and the confirm gate refusing an
+unconfirmed write.
+
+The deployed backend pin was also confirmed from the gateway admin API as
+`ghcr.io/staticrevolution-com/sr-truenas-mcp:v1.2.1`, i.e. master — the
+`:v1.1.1` premise this work started from was false.
 
 ## [1.2.1] — 2026-08-21
 
