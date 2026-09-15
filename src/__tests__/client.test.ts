@@ -491,6 +491,51 @@ describe("TrueNASClient WebSocket", () => {
         MockWebSocket.prototype.send = origSend;
       }
     });
+
+    it("opens the WebSocket itself when nothing has connected yet", async () => {
+      // Regression gate, 2026-09-15. The not-connected branch used to skip the
+      // reconnect and "let the next call() reconnect through its normal path".
+      // That holds only if some caller eventually issues a call — false on the
+      // upload path, where `putFileContent` reaches middlewared over HTTP
+      // (`/_upload`) and may never have opened the WebSocket at all. The loop
+      // then spun for the whole timeout and reported a failure for a write
+      // that had already succeeded on disk. Measured live against
+      // 26.0.0-BETA.1: three uploads, all SUCCESS server-side within the same
+      // second, all reported as timeouts.
+      //
+      // Deliberately NO `await client.connect()` here — every other test in
+      // this block connects first, which is exactly why the gap survived.
+      const origSend = MockWebSocket.prototype.send;
+      MockWebSocket.prototype.send = function (data: string, cb?: (err?: Error) => void) {
+        this.sentMessages.push(data);
+        cb?.();
+        const msg = JSON.parse(data);
+        // Keep answering the handshake/auth — the point of the test is that
+        // waitForJob drives that handshake itself.
+        if (msg.msg === "connect") {
+          setTimeout(() => this.emit("message", JSON.stringify({ msg: "connected", session: "test-session" })), 0);
+        } else if (msg.method === "auth.login_with_api_key") {
+          setTimeout(() => this.emit("message", JSON.stringify({ id: msg.id, msg: "result", result: true })), 0);
+        } else if (msg.method === "core.get_jobs") {
+          setTimeout(() => this.emit("message", JSON.stringify({
+            id: msg.id, msg: "result",
+            result: [{ id: 77, method: "filesystem.put", state: "SUCCESS", progress: { percent: 100, description: "" }, result: true, error: null, time_started: null, time_finished: null }],
+          })), 0);
+        }
+        mockWs = this;
+      };
+
+      try {
+        const result = await client.waitForJob(77, 8_000);
+        expect(result.state).toBe("SUCCESS");
+        // It must have reached the server, not just given up quietly.
+        const methods = mockWs.sentMessages.map((m) => JSON.parse(m).method ?? "(handshake)");
+        expect(methods).toContain("auth.login_with_api_key");
+        expect(methods).toContain("core.get_jobs");
+      } finally {
+        MockWebSocket.prototype.send = origSend;
+      }
+    }, 15_000);
   });
 
   describe("send-error fix (A4b)", () => {

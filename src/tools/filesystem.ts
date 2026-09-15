@@ -184,9 +184,17 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
       const job = await client.putFileContent(validPath, bytes, { append, mode: modeValue });
 
-      // filesystem.put reports success even where the parent dataset is not
-      // mounted, exactly as filesystem_mkdir does on this release — stat back
-      // so a write into nothing is not reported as a write.
+      // Stat back so an enqueued-but-ineffective write is not reported as a
+      // write, and so the caller gets the resulting size/mode/mount_id.
+      //
+      // ⚠ Scope of this check, measured on 26.0.0-BETA.1: `filesystem.put`
+      // calls `os.makedirs()` for a missing parent, so a missing DIRECTORY is
+      // created rather than refused — this does not catch that, because there
+      // is nothing to catch. It also does NOT catch a write beneath an
+      // UNMOUNTED dataset: the bytes land on the underlying filesystem at the
+      // same path, so `stat` succeeds and the file disappears when the dataset
+      // mounts. Detecting that needs the written file's `mount_id` compared
+      // against the dataset's own — not done here.
       let verified: unknown;
       try {
         verified = await client.call("filesystem.stat", [validPath]);
