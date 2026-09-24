@@ -5,6 +5,7 @@ import { validateTrueNASPath } from "../validation.js";
 import { parseEpochSeconds, shapeReportingResult } from "../reporting.js";
 import { awaitJobResult } from "../job-utils.js";
 import { DEFAULT_DOWNLOAD_BYTES, MAX_TRANSFER_BYTES } from "../file-transfer.js";
+import { LISTDIR_MAX_LIMIT, SPARSE_FILE_NOTE, measureDiskUsage } from "../disk-usage.js";
 
 /**
  * `reporting.get_data` requires integer epoch seconds. The tool schema used to
@@ -31,7 +32,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "filesystem_stat",
-    "Get file or directory info including permissions, size, owner, and timestamps. Provide the full path on the TrueNAS system.",
+    `Get file or directory info including permissions, size, owner, and timestamps. Provide the full path on the TrueNAS system. NOTE: on a DIRECTORY this reports the directory entry itself, not its contents — use filesystem_disk_usage to measure a tree. ${SPARSE_FILE_NOTE}`,
     {
       path: z.string().describe("Full filesystem path, e.g. '/mnt/tank/data'"),
     },
@@ -44,11 +45,20 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "filesystem_listdir",
-    "List contents of a directory. Returns files and subdirectories with metadata. Supports pagination via limit and offset.",
+    `List contents of a directory. Returns files and subdirectories with metadata. Supports pagination via limit and offset. ${SPARSE_FILE_NOTE}`,
     {
       path: z.string().describe("Full directory path to list"),
-      limit: z.number().optional().default(100).describe("Maximum number of entries to return (default: 100)"),
-      offset: z.number().optional().default(0).describe("Number of entries to skip (default: 0)"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(LISTDIR_MAX_LIMIT)
+        .optional()
+        .default(100)
+        .describe(
+          `Maximum number of entries to return (default: 100, server maximum: ${LISTDIR_MAX_LIMIT}). Page with offset for larger directories.`,
+        ),
+      offset: z.number().int().min(0).optional().default(0).describe("Number of entries to skip (default: 0)"),
     },
     async ({ path, limit, offset }) => {
       const validPath = validateTrueNASPath(path);
@@ -77,6 +87,49 @@ export function register(server: McpServer, client: TrueNASClient): void {
           `filesystem.mkdir reported success but post-write verification failed — '${validPath}' does not exist (is the parent dataset mounted?): ${detail}`
         );
       }
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "filesystem_disk_usage",
+    "Measure where space is going under a directory. Sums allocation_size (bytes on disk) per child subtree within an entry budget and a time limit. A subtree too large to finish is reported with recursive_allocation: null plus its entry count — it localises usage rather than returning a wrong total or hanging. For an authoritative dataset total use dataset_zfs_query instead.",
+    {
+      path: z.string().describe("Full directory path to measure, e.g. '/mnt/tank/apps'"),
+      depth: z
+        .number()
+        .int()
+        .min(1)
+        .max(64)
+        .optional()
+        .default(64)
+        .describe(
+          "Maximum recursion depth below each child (default: 64, i.e. effectively unlimited — the entry/time budget is the intended limiter). Lower it only to deliberately cap work.",
+        ),
+      max_entries: z
+        .number()
+        .int()
+        .min(100)
+        .max(500_000)
+        .optional()
+        .default(50_000)
+        .describe("Stop after scanning this many directory entries (default: 50000)"),
+      timeout_ms: z
+        .number()
+        .int()
+        .min(1_000)
+        .max(600_000)
+        .optional()
+        .default(30_000)
+        .describe("Stop after this long (default: 30000ms)"),
+    },
+    async ({ path, depth, max_entries, timeout_ms }) => {
+      const validPath = validateTrueNASPath(path);
+      const result = await measureDiskUsage(client, validPath, {
+        depth,
+        maxEntries: max_entries,
+        timeoutMs: timeout_ms,
+      });
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

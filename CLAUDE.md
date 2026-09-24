@@ -50,7 +50,7 @@ GitHub releases include pre-built `sr-truenas-mcp-linux-x64.tar.gz` with SHA256 
 
 ## Architecture
 
-Single MCP tool (`truenas`) with hierarchical discovery: 273 active actions across 17 categories, exposed through 3 modes (list categories, list actions, execute).
+Single MCP tool (`truenas`) with hierarchical discovery: 275 active actions across 17 categories, exposed through 3 modes (list categories, list actions, execute).
 
 **Transport**: WebSocket JSON-RPC 2.0 (DDP protocol) at `wss://{host}/websocket`.
 
@@ -83,7 +83,7 @@ Single MCP tool (`truenas`) with hierarchical discovery: 273 active actions acro
 | 0 — Blocked | Never registered | 8 | `system_reboot`, `truenas_api_call`, `cronjob_create` |
 | 1 — Confirm+Reason | `confirm: true` + `reason: "string"` | 20 | `pool_export`, `disk_wipe`, `dataset_delete`, `user_create`, `ssh_config_update` |
 | 2 — Confirm | `confirm: true` | 94 | `service_stop`, `snapshot_delete`, `smb_share_create`, `iscsi_extent_create`, `replication_run` |
-| 3 — Open | None | 159 | All reads, safe queries |
+| 3 — Open | None | 161 | All reads, safe queries |
 
 Full tier assignments in `src/safety.ts`. 32 handlers also have in-handler `confirm` checks as defense-in-depth.
 
@@ -119,8 +119,8 @@ Handlers serialize their payload into `content[].text` *before* the registry see
 
 Two validators in `src/validation.ts`:
 
-- **`validateTrueNASPath(path)`** — for filesystem paths. Must start with `/mnt/`, no `..`, no null bytes. 24 call sites across `filesystem.ts`, `sharing.ts` (smb/nfs share `path`, iscsi extent file `path`), `replication.ts` (cloudsync/cloud_backup/rsync `path`), `network.ts` (user `home`), and `storage.ts` (`dataset_set_permissions` mountpoint).
-- **`validateDatasetName(name)`** — for ZFS dataset names (e.g. `tank/data`). Charset `[a-zA-Z0-9._:/-]`, max 255 chars, no `..`, no null bytes. 5 call sites: `dataset_create` and `snapshot_list` (`storage.ts`), `replication_create` (`source_datasets[]` + `target_dataset`), and `replication_restore` (`target_dataset`). `dataset_create` additionally routes `/mnt/`-prefixed input through `validateTrueNASPath` for defense in depth.
+- **`validateTrueNASPath(path)`** — for filesystem paths. Must start with `/mnt/`, no `..`, no null bytes. 25 call sites across `filesystem.ts`, `sharing.ts` (smb/nfs share `path`, iscsi extent file `path`), `replication.ts` (cloudsync/cloud_backup/rsync `path`), `network.ts` (user `home`), and `storage.ts` (`dataset_set_permissions` mountpoint).
+- **`validateDatasetName(name)`** — for ZFS dataset names (e.g. `tank/data`). Charset `[a-zA-Z0-9._:/-]`, max 255 chars, no `..`, no null bytes. 6 call sites: `dataset_create` and `snapshot_list` (`storage.ts`), `replication_create` (`source_datasets[]` + `target_dataset`), and `replication_restore` (`target_dataset`). `dataset_create` additionally routes `/mnt/`-prefixed input through `validateTrueNASPath` for defense in depth.
 
 Run `npm run audit:counts` to verify these numbers against the source.
 
@@ -202,6 +202,8 @@ Update: publish a new tagged release (CI builds the binary tarball + GHCR image)
 - **There is no way to delete a file.** Not a gap in this server — the middleware has no unlink-equivalent at all. Verified by enumerating every method `core.get_methods` reports on TrueNAS 26.0.0-BETA.1 (781 of them): nothing removes a single file. `dataset_delete` destroys a whole dataset, and the web shell is the only other route. Don't go looking for the method; it isn't there.
 - File content transfer (`filesystem_get` / `filesystem_put`) does not travel over the WebSocket. Both underlying methods are pipe-based `@job`s, so the server also speaks HTTPS to `/_upload` and `/_download` on the same host and port — see `src/file-transfer.ts`. A deployment that reaches the WebSocket but not port 444 over HTTPS will find these two actions failing while everything else works.
 - Single transfers are capped at 16 MiB in either direction, with `filesystem_get` defaulting to 1 MiB. The limit is the context window, not the NAS.
+- **`dataset_get` / `dataset_list` do not see internal datasets.** Upstream `pool.dataset.query` omits `<pool>/ix-apps` and its children — including the apps/Docker root — while listing `.ix-virt`, so it is not a dot-prefix rule. `dataset_get` now falls back to `zfs.resource.query` and says so; use `dataset_zfs_query` to enumerate such a subtree. ⚠ An ENOENT from the dataset API means "not surfaced", not necessarily "absent".
+- **`filesystem_disk_usage` is bounded, not exhaustive.** A subtree exceeding its entry/time budget returns `recursive_allocation: null` with an entry count rather than a partial sum. Authoritative dataset totals come from `dataset_zfs_query`, not from summing a walk.
 - `filesystem_put` **creates missing parent directories** — `filesystem.put` calls `os.makedirs()` upstream, so a typo in a path silently produces a new directory tree rather than an error. Combined with the absence of any file-delete method (above), a mistyped path is not cleanly undoable: the unit of cleanup is the dataset.
 - `filesystem_put`'s post-write `stat` confirms that something landed at the path. It does **not** detect a write beneath an **unmounted** dataset — the bytes go to the underlying filesystem at the same path, `stat` succeeds, and the file vanishes when the dataset mounts. Catching that needs a `mount_id` comparison against the dataset; not implemented.
 - `snapshot_task_run` cannot work on TrueNAS 26.0 — an upstream middleware bug. The action returns a diagnosis rather than a bare `[EINVAL]`; see the 2026-09-13 field report.

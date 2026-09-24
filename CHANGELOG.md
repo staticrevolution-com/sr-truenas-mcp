@@ -5,6 +5,106 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — 2026-09-24
+
+Five findings raised from an ep11 outage investigation (apps pool hit zero
+bytes), plus one found while measuring them. Two new actions take the registered
+surface from 273 to 275.
+
+Evidence is stated per item, because these were not equally well-founded:
+**measured** means reproduced against a live TrueNAS 26.0.0-BETA.1 host,
+**indicated** means strongly suggested but not confirmed.
+
+### Added
+
+- **`filesystem_disk_usage` (tier 3)** — bounded directory-tree measurement, and
+  deliberately **not** a recursive `du`. Every level costs a `filesystem.listdir`
+  round-trip, and the directories worth asking about are exactly the ones big
+  enough to make that intractable: `/mnt/.ix-apps/docker/overlay2` was **measured
+  at 48,544 entries**, where counting them flat took 10.4 s and five paged calls
+  and a full recursive walk is ~10⁵ round-trips. An action promising a recursive
+  total would hang, or return a partial sum indistinguishable from a real one, on
+  the one directory the caller most needs.
+
+  So it spends a fixed entry/time budget and reports what it did not finish:
+  `{ entries: 48544, recursive_allocation: null, truncated: true }`. That
+  localises usage without pretending to size it. `stopped_because` separates
+  "ran out of budget" from "hit the depth cap".
+
+  ⚠ **The budget is per child, not global.** With a shared budget the largest
+  subtree consumed all of it and every sibling afterwards returned
+  `entries: 0, truncated: true` — including one that really held 231 entries.
+  Zeroes for non-empty trees is precisely the failure this action exists to
+  prevent, so one oversized subtree must never starve the siblings it is being
+  compared against.
+
+  Authoritative totals should come from ZFS, not from summing a walk — one
+  source of truth beats two that can disagree.
+
+- **`dataset_zfs_query` (tier 3)** — query ZFS resources directly, including
+  datasets the `pool.dataset` API does not surface, with real on-disk accounting
+  (`used`, `usedbydataset`, `usedbychildren`, `usedbysnapshots`, `available`).
+
+### Fixed
+
+- **`dataset_get` no longer reports "does not exist" for datasets that do.**
+  **Measured:** `pool.dataset.query` omits `data-pool/ix-apps` and its twelve
+  children entirely — including the Docker root for every container on the host,
+  holding ~998 GB — while `zfs.resource.query` returns them in full. An explicit
+  `[["id","=",…]]` predicate returns `[]` and `get_instance` returns `[ENOENT]`.
+  This is **upstream TrueNAS behaviour, not a gap in this server**: the omission
+  was confirmed by going under the MCP straight to middleware, after first
+  checking that this server does no filtering of its own. A dot-prefix rule is
+  ruled out — `.ix-virt` *is* listed.
+
+  ENOENT now triggers a ZFS-namespace lookup, and a hit returns the real
+  properties with a note explaining why the dataset namespace hid it. A dataset
+  that is genuinely absent still reports ENOENT, and non-ENOENT errors are not
+  swallowed — a fallback that tries harder until something answers is a fallback
+  that can never report absence.
+
+- **Parameter errors name the key that was rejected, not just the one missing.**
+  `dataset_get {"dataset": …}` reported only `id: expected string, received
+  undefined`; Zod's `.strip()` had silently discarded `dataset`, so the actual
+  mistake was invisible. Errors now list the ignored keys and the accepted ones.
+
+- **`filesystem_listdir`'s `limit` is bounded client-side** at the server's
+  maximum of 10,000. **Measured:** `limit: 200000` returned `[EAGAIN] [EINVAL]
+  query_options: Value error, Options limit must be between 1 and 10000` — an
+  opaque server error for a client-checkable mistake. Found while investigating
+  the above.
+
+### Documented
+
+- **The sparse-file trap, on every action returning either field.** `size` is
+  apparent length; `allocation_size` is bytes on disk. **Measured** under a
+  Docker root: `metadata_v2.db` 320 MB apparent against 69 MB allocated, with
+  ~1.1 GB apparent for ~175 MB real across three buildkit databases — an
+  overstatement of up to **23x**, with nothing signalling it. A session nearly
+  concluded buildkit metadata was material on that basis.
+
+- **`dataset_get` can return an enormous response**, and now offers `fields` and
+  `include_children` to avoid it. **Measured:** 571,342 characters for a parent
+  with many children, roughly 4,000x what a caller wanting `used` and
+  `available` needs; the `children` array dominates. **The default is
+  unchanged** — narrowing it would silently alter the shape existing consumers
+  read, and the consumer set is not known from this repo. Changing the default
+  is a deliberate non-decision left to the operator.
+
+### Verified
+
+All of the above exercised against a live 26.0.0-BETA.1 host. `dataset_get`
+returned the ZFS record for the hidden dataset in 0.7 s; `dataset_zfs_query`
+enumerated 13 resources; `filesystem_disk_usage` on the Docker root completed
+`containers` (1,194 entries, 1,464 MB) and `buildkit` (463 entries, **181.7 MB**
+— independently corroborating the sparse-file finding from the allocation side)
+while correctly truncating `overlay2`, `image` and `volumes`.
+
+⚠ **Not established:** that the 48,544 overlay2 directories are *orphaned* layers.
+That is **indicated, not measured** — entry counts are not sizes, and the bytes
+are not attributed between `overlay2` and `volumes`. A layer-to-image
+reconciliation would confirm it.
+
 ## [1.3.0] — 2026-09-13
 
 Five defects hit in a single live operator session against TrueNAS

@@ -311,7 +311,19 @@ export class ToolRegistry {
         const issues = result.error.issues
           .map((i) => `${i.path.join(".")}: ${i.message}`)
           .join("; ");
-        return { error: `Validation failed for "${action}": ${issues}` };
+
+        // `.strip()` silently discards unknown keys, so a caller who guessed a
+        // plausible-but-wrong parameter name saw only "id: expected string,
+        // received undefined" — the message named the field it wanted and never
+        // the one it threw away, leaving the actual mistake invisible. Report
+        // the rejected keys alongside the accepted ones.
+        const known = Object.keys(tool.schema);
+        const unknown = Object.keys(handlerParams).filter((k) => !known.includes(k));
+        const hint = unknown.length
+          ? ` Ignored unknown parameter(s): ${unknown.join(", ")}.` +
+            ` Accepted parameter(s) for "${action}": ${known.join(", ")}.`
+          : "";
+        return { error: `Validation failed for "${action}": ${issues}.${hint}` };
       }
       const handlerResult = await tool.handler(result.data as Record<string, unknown>);
       return filterToolResult(handlerResult);

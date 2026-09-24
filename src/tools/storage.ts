@@ -302,10 +302,85 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "dataset_get",
-    "Get dataset details by name (e.g. 'tank/data')",
-    { id: z.string().describe("Dataset name/path (e.g. 'tank/data')") },
-    async ({ id }) => {
-      const result = await client.call("pool.dataset.get_instance", [id]);
+    "Get dataset details by name (e.g. 'tank/data'). Falls back to the ZFS namespace for datasets the pool.dataset API does not surface (e.g. the apps/Docker root). Use 'fields' to avoid very large responses.",
+    {
+      id: z.string().describe("Dataset name/path (e.g. 'tank/data')"),
+      fields: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Return only these top-level fields (e.g. ['id','used','available','mountpoint']). " +
+            "Omit for the full record — which for a parent with many children can exceed 500,000 characters.",
+        ),
+      include_children: z
+        .enum(["full", "names", "none"])
+        .optional()
+        .default("full")
+        .describe(
+          "How to render the 'children' array. 'full' (default) is the complete record per child and is what makes large parents enormous; 'names' lists child ids only; 'none' omits them.",
+        ),
+    },
+    async ({ id, fields, include_children }) => {
+      let result: Record<string, unknown>;
+      try {
+        result = (await client.call("pool.dataset.get_instance", [id])) as Record<string, unknown>;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // ⚠ ENOENT from pool.dataset does NOT mean the dataset is absent — the
+        // namespace omits internal datasets entirely. Measured on
+        // 26.0.0-BETA.1 (2026-09-24): `data-pool/ix-apps` and its 12 children,
+        // including the Docker root holding ~998 GB, return ENOENT here while
+        // `zfs.resource.query` returns them in full. Reporting "does not exist"
+        // for the busiest dataset on the box is the emptiness-is-not-health
+        // failure, so probe the lower-level namespace before believing it.
+        if (!/ENOENT|does not exist|MatchNotFound/i.test(message)) throw err;
+        const zfs = await lookupZfsResource(client, id);
+        if (!zfs) throw err;
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              source: "zfs.resource.query",
+              note:
+                `'${id}' is not surfaced by the pool.dataset API (it returned ENOENT), but it DOES ` +
+                "exist — these are its ZFS properties. Internal datasets such as the apps/Docker " +
+                "root are omitted from the dataset namespace; this is upstream TrueNAS behaviour, " +
+                "not a gap in this server. Use dataset_zfs_query to enumerate such a subtree.",
+              resource: zfs,
+            }, null, 2),
+          }],
+        };
+      }
+      return {
+        content: [{ type: "text", text: JSON.stringify(shapeDataset(result, fields, include_children), null, 2) }],
+      };
+    },
+  );
+
+  server.tool(
+    "dataset_zfs_query",
+    "Query ZFS resources directly, including datasets the pool.dataset API hides (e.g. the apps/Docker root). Returns authoritative on-disk space accounting — used, usedbydataset, usedbychildren, usedbysnapshots, available. Prefer this for 'where did the space go' questions.",
+    {
+      paths: z
+        .array(z.string())
+        .describe("ZFS paths to query, e.g. ['data-pool/ix-apps']. Must not overlap when get_children is true."),
+      get_children: z.boolean().optional().default(false).describe("Include the full child hierarchy"),
+      properties: z
+        .array(z.string())
+        .optional()
+        .describe("ZFS properties to return. Omit for a useful default set."),
+    },
+    async ({ paths, get_children, properties }) => {
+      for (const path of paths) validateDatasetName(path);
+      const body: Record<string, unknown> = {
+        paths,
+        get_children,
+        properties: properties ?? [
+          "used", "usedbydataset", "usedbychildren", "usedbysnapshots",
+          "available", "referenced", "quota", "mountpoint",
+        ],
+      };
+      const result = await client.call("zfs.resource.query", [body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -856,4 +931,60 @@ async function describeSnapshotTaskRunBug(
   );
 
   return lines.join("\n");
+}
+
+/**
+ * Look a path up in the ZFS namespace, which sees internal datasets the
+ * pool.dataset namespace omits. Returns undefined when genuinely absent, so a
+ * real ENOENT still surfaces as one.
+ */
+async function lookupZfsResource(
+  client: TrueNASClient,
+  id: string,
+): Promise<unknown | undefined> {
+  try {
+    const rows = (await client.call("zfs.resource.query", [{
+      paths: [id],
+      get_children: false,
+      properties: ["used", "usedbydataset", "usedbychildren", "usedbysnapshots", "available", "referenced", "mountpoint"],
+    }])) as unknown[];
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Trim a dataset record before it crosses the context window.
+ *
+ * `dataset_get` on a parent with many children was measured at 571,342
+ * characters (2026-09-24) — roughly 4,000x what a caller wanting `used` and
+ * `available` needs. The `children` array is what dominates, so it is the knob
+ * that matters; `fields` narrows the rest.
+ */
+function shapeDataset(
+  record: Record<string, unknown>,
+  fields: string[] | undefined,
+  includeChildren: "full" | "names" | "none",
+): Record<string, unknown> {
+  let shaped: Record<string, unknown> = record;
+
+  if (includeChildren !== "full" && Array.isArray(record.children)) {
+    shaped = { ...record };
+    if (includeChildren === "none") {
+      delete shaped.children;
+      shaped.children_count = (record.children as unknown[]).length;
+    } else {
+      shaped.children = (record.children as Array<Record<string, unknown>>).map((c) => c.id ?? c.name);
+    }
+  }
+
+  if (fields && fields.length > 0) {
+    const picked: Record<string, unknown> = {};
+    for (const key of fields) {
+      if (key in shaped) picked[key] = shaped[key];
+    }
+    return picked;
+  }
+  return shaped;
 }
