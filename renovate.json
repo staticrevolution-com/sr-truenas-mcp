@@ -1,4 +1,56 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>staticrevolution-com/renovate-config"]
+  "description": "Inlined deliberately. This repo previously extended github>staticrevolution-com/renovate-config, which is PRIVATE while this repo is PUBLIC — the hosted Renovate app will not read a private preset for a public consumer, so it halted and opened no PRs at all between 2026-08-21 and 2026-09-25. The shared preset is also ~90% Docker-datasource rules, and this repo has no compose files. See issue #14.",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":dependencyDashboard"
+  ],
+  "timezone": "America/Chicago",
+  "schedule": ["after 2am and before 5am every day"],
+  "labels": ["dependencies", "renovate"],
+  "assignees": ["whasamatau"],
+  "semanticCommits": "enabled",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 10,
+  "rebaseWhen": "behind-base-branch",
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "🤖 Renovate Dependency Dashboard",
+  "separateMajorMinor": true,
+  "separateMinorPatch": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security", "urgent"],
+    "automerge": false,
+    "schedule": ["at any time"]
+  },
+  "ignorePaths": ["**/node_modules/**", "**/dist/**"],
+  "packageRules": [
+    {
+      "description": "devDependency patch/minor updates auto-merge once CI is green and the release has aged — build-host surface, not shipped surface.",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Runtime dependencies are never auto-merged. ws is the WebSocket transport under every TrueNAS call and the MCP SDK defines the tool plane; both get a human.",
+      "matchDepTypes": ["dependencies"],
+      "automerge": false,
+      "addLabels": ["runtime-dependency"]
+    },
+    {
+      "description": "Group GitHub Actions bumps into one PR. They are pinned to digests, so individually they are noise.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "automerge": false
+    },
+    {
+      "description": "Major updates always need review.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "addLabels": ["major-update"]
+    }
+  ]
 }

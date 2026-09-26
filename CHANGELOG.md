@@ -5,6 +5,81 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] — 2026-09-25
+
+Dependency security. No action-surface change; no behaviour change to any
+TrueNAS call.
+
+### Fixed
+
+- **Renovate had opened zero PRs on this repository, ever.** `renovate.json`
+  extended `github>staticrevolution-com/renovate-config`, which is **private**
+  while this repository is **public** — the hosted Renovate app will not read a
+  private preset for a public consumer, so it halted "as a precaution" on
+  2026-08-21 and stayed silent (issue #14).
+
+  ⚠ It fails toward the reassuring answer: **no PRs looks exactly like nothing
+  to update.** Five weeks later the tree carried 16 advisories.
+
+  The decisive control: the *identical* preset string resolves fine in the
+  org's private repos, which received Renovate PRs on 2026-09-15 and
+  2026-09-23 — after the failure here. Repository visibility is the only
+  variable that differs. Granting the app access to the preset repo is
+  therefore not the fix; it already has it.
+
+  The preset is now **inlined**, scoped to npm and GitHub Actions. That is
+  smaller *and* more correct than what it replaces: the shared preset is
+  overwhelmingly Docker-datasource rules and this repository has no compose
+  files. Publishing the preset instead was rejected — its descriptions name
+  internal services and incident documents.
+
+- **16 advisories → 2.** Both criticals and all seven highs cleared by
+  `npm audit fix` (no `--force`, no code change):
+  - **`ws` 8.20.0 → 8.21.3** — the WebSocket transport under *every* TrueNAS
+    call. The blocking advisory is the memory-exhaustion DoS
+    (`GHSA-96hv-2xvq-fx4p`, fixed 8.21.0), not the uninitialized-memory
+    disclosure, which is moderate and was already fixed in 8.20.1. A minor
+    bump inside the existing `^8.18.0` range; `src/client.ts` uses only stable
+    8.x API and the suite passes unchanged.
+  - **`vitest` 3.2.4 → 3.2.7** — clears the critical UI-server file read.
+
+  The two remaining advisories are one dev-only moderate requiring a vitest
+  major. Left deliberately: a major bump of the test runner to clear a
+  build-host advisory is a worse trade than the advisory.
+
+### Added
+
+- **A dependency-audit job in CI, which is the actual fix.** Blocking on
+  `npm audit --omit=dev --audit-level=high` — the runtime tree, i.e. what
+  ships in the npm package and the GHCR image — plus a non-blocking full-tree
+  report in the run summary.
+
+  Scoped to the runtime tree on purpose: gating on devDependency advisories
+  fails the build for a test-runner CVE that cannot reach production, and a
+  gate that cries wolf is one somebody adds `continue-on-error` to.
+
+  ⚠ If a genuinely unreachable advisory ever blocks a release, **do not relax
+  the level to `critical`** — that silently drops the whole `high` class,
+  including the `ws` advisory this job exists for. Add a dated `overrides`
+  entry so the exception stays visible. There is a test asserting this.
+
+- **A weekly schedule on CI.** A push-triggered audit cannot see an advisory
+  published against unchanged code, which is how most of this risk arrives.
+
+- **`npm run type-check` in CI.** It was never there despite being documented.
+
+- **`src/__tests__/ci-claims.test.ts`** — gates the claims the docs make about
+  CI, by re-deriving them from `ci.yml`. Mutation-verified: relaxing the audit
+  threshold to `critical` trips two assertions.
+
+### Documented
+
+- **`CLAUDE.md` no longer asserts a vulnerability count.** It claimed "0
+  vulnerabilities" and was wrong by 16, including 2 critical, for an unknown
+  period. It now points at the CI job, which re-derives the number. A count in
+  prose is a recorded fact with nothing checking it — the whole failure this
+  release is about.
+
 ## [1.3.0] — 2026-09-13
 
 Five defects hit in a single live operator session against TrueNAS
