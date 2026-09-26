@@ -3,8 +3,9 @@ import { z } from "zod";
 import { TrueNASClient } from "../client.js";
 import { validateTrueNASPath } from "../validation.js";
 import { parseEpochSeconds, shapeReportingResult } from "../reporting.js";
-import { awaitJobResult } from "../job-utils.js";
+import { awaitJobResult, describeAsyncJob } from "../job-utils.js";
 import { DEFAULT_DOWNLOAD_BYTES, MAX_TRANSFER_BYTES } from "../file-transfer.js";
+import { LISTDIR_MAX_LIMIT, SPARSE_FILE_NOTE, measureDiskUsage } from "../disk-usage.js";
 
 /**
  * `reporting.get_data` requires integer epoch seconds. The tool schema used to
@@ -24,15 +25,6 @@ const epochParam = z.union([z.string(), z.number()]).transform((value, ctx) => {
   return seconds;
 });
 
-/**
- * middlewared rejects `query_options.limit` above this.
- *
- * ⚠ MERGE NOTE: PR #20 introduces `src/disk-usage.ts`, which exports the same
- * constant. Whichever lands second should delete this copy and import that one
- * — two records of one number is the drift this repo keeps fixing.
- */
-const LISTDIR_MAX_LIMIT = 10_000;
-
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
   // Filesystem
@@ -40,7 +32,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "filesystem_stat",
-    "Get file or directory info including permissions, size, owner, and timestamps. Provide the full path on the TrueNAS system.",
+    `Get file or directory info including permissions, size, owner, and timestamps. Provide the full path on the TrueNAS system. NOTE: on a DIRECTORY this reports the directory entry itself, not its contents — use filesystem_disk_usage to measure a tree. ${SPARSE_FILE_NOTE}`,
     {
       path: z.string().describe("Full filesystem path, e.g. '/mnt/tank/data'"),
     },
@@ -53,7 +45,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "filesystem_listdir",
-    "List contents of a directory. Returns an envelope: { path, entries, count, truncated, next_offset }. ALWAYS check 'truncated' — a truncated listing is a partial answer, and absence from it does not mean a file is missing. Supply query_filters to filter server-side.",
+    `List contents of a directory. Returns an envelope: { path, entries, count, truncated, next_offset }. ALWAYS check 'truncated' — a truncated listing is a partial answer, and absence from it does not mean a file is missing. Supply query_filters to filter server-side. ${SPARSE_FILE_NOTE}`,
     {
       path: z.string().describe("Full directory path to list"),
       query_filters: z
@@ -165,6 +157,49 @@ export function register(server: McpServer, client: TrueNASClient): void {
           `filesystem.mkdir reported success but post-write verification failed — '${validPath}' does not exist (is the parent dataset mounted?): ${detail}`
         );
       }
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "filesystem_disk_usage",
+    "Measure where space is going under a directory. Sums allocation_size (bytes on disk) per child subtree within an entry budget and a time limit. A subtree too large to finish is reported with recursive_allocation: null plus its entry count — it localises usage rather than returning a wrong total or hanging. For an authoritative dataset total use dataset_zfs_query instead.",
+    {
+      path: z.string().describe("Full directory path to measure, e.g. '/mnt/tank/apps'"),
+      depth: z
+        .number()
+        .int()
+        .min(1)
+        .max(64)
+        .optional()
+        .default(64)
+        .describe(
+          "Maximum recursion depth below each child (default: 64, i.e. effectively unlimited — the entry/time budget is the intended limiter). Lower it only to deliberately cap work.",
+        ),
+      max_entries: z
+        .number()
+        .int()
+        .min(100)
+        .max(500_000)
+        .optional()
+        .default(50_000)
+        .describe("Stop after scanning this many directory entries (default: 50000)"),
+      timeout_ms: z
+        .number()
+        .int()
+        .min(1_000)
+        .max(600_000)
+        .optional()
+        .default(30_000)
+        .describe("Stop after this long (default: 30000ms)"),
+    },
+    async ({ path, depth, max_entries, timeout_ms }) => {
+      const validPath = validateTrueNASPath(path);
+      const result = await measureDiskUsage(client, validPath, {
+        depth,
+        maxEntries: max_entries,
+        timeoutMs: timeout_ms,
+      });
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -511,7 +546,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       config: z.record(z.string(), z.unknown()).describe("Directory services configuration fields to update"),
     },
     async ({ config }) => {
-      const result = await client.call("directoryservices.update", [config]);
+      const result = await awaitJobResult(client, await client.call("directoryservices.update", [config]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -540,7 +575,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "Leave domain aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.call("directoryservices.leave", [{ credential: { credential_type: "KERBEROS_USER", username, password } }]);
+      const result = await awaitJobResult(client, await client.call("directoryservices.leave", [{ credential: { credential_type: "KERBEROS_USER", username, password } }]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -550,7 +585,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Refresh the directory services cache. Forces re-read of users and groups from the directory server.",
     {},
     async () => {
-      const result = await client.call("directoryservices.cache_refresh");
+      const result = describeAsyncJob(await client.call("directoryservices.cache_refresh"));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -610,13 +645,13 @@ export function register(server: McpServer, client: TrueNASClient): void {
       enabled: z.boolean().optional().default(true).describe("Whether the tunable is active"),
     },
     async ({ type, var: varName, value, comment, enabled }) => {
-      const result = await client.call("tunable.create", [{
+      const result = await awaitJobResult(client, await client.call("tunable.create", [{
         type,
         var: varName,
         value,
         comment,
         enabled,
-      }]);
+      }]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -639,7 +674,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (value !== undefined) body.value = value;
       if (comment !== undefined) body.comment = comment;
       if (enabled !== undefined) body.enabled = enabled;
-      const result = await client.call("tunable.update", [id, body]);
+      const result = await awaitJobResult(client, await client.call("tunable.update", [id, body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -651,7 +686,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.number().describe("Tunable ID to delete"),
     },
     async ({ id }) => {
-      const result = await client.call("tunable.delete", [id]);
+      const result = await awaitJobResult(client, await client.call("tunable.delete", [id]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

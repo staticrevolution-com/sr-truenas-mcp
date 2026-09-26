@@ -5,6 +5,11 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  schedule:
+    # Mondays 08:00 UTC. An advisory published against unchanged code is
+    # invisible to a push-triggered audit — the tree does not have to move for
+    # the risk to appear.
+    - cron: '0 8 * * 1'
 
 jobs:
   build:
@@ -17,4 +22,47 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - run: npm run type-check
       - run: npm test
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # BLOCKING — runtime tree only, high and above.
+      #
+      # This is the set that actually ships, inside the published npm package
+      # and the GHCR image, so a hit is a release blocker rather than a chore.
+      # It is scoped to --omit=dev deliberately: gating on devDependency
+      # advisories means the gate fails on a test-runner CVE that cannot reach
+      # production, and a gate that cries wolf is one somebody adds
+      # continue-on-error to. The full tree is still reported, just below.
+      #
+      # ⚠ If this ever fails on something genuinely unreachable, do NOT relax
+      # the level to `critical` — that silently drops the whole `high` class,
+      # including the ws transport advisory this gate was added for. Add a
+      # dated `overrides` entry or an explicit allowlist instead, so the
+      # exception stays visible rather than being absorbed into the threshold.
+      - name: Audit runtime dependencies (blocking, high+)
+        run: npm audit --omit=dev --audit-level=high
+
+      # ADVISORY ONLY — never blocks the build.
+      # devDependency advisories are build-host exposure, not shipped
+      # exposure. They belong in front of a human, not in front of a merge.
+      - name: Audit full tree (advisory)
+        if: always()
+        run: |
+          {
+            echo '### npm audit — full tree (advisory, non-blocking)'
+            echo ''
+            echo '```'
+            npm audit --audit-level=low 2>&1 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

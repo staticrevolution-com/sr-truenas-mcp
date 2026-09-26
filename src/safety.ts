@@ -217,6 +217,7 @@ export const ACTION_TIERS: Record<string, SafetyTier> = {
   pool_attachments: SafetyTier.Open,
   pool_get_disks: SafetyTier.Open,
   dataset_list: SafetyTier.Open,
+  dataset_zfs_query: SafetyTier.Open,
   dataset_get: SafetyTier.Open,
   dataset_create: SafetyTier.Open,
   dataset_update: SafetyTier.Open,
@@ -389,6 +390,7 @@ export const ACTION_TIERS: Record<string, SafetyTier> = {
   filesystem_stat: SafetyTier.Open,
   filesystem_listdir: SafetyTier.Open,
   filesystem_get: SafetyTier.Open,
+  filesystem_disk_usage: SafetyTier.Open,
   filesystem_get_acl: SafetyTier.Open,
 
   // Reporting
