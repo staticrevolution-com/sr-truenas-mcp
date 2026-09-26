@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
-import { describeAsyncJob } from "../job-utils.js";
+import { awaitJobResult, describeAsyncJob } from "../job-utils.js";
 
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       for (const [key, value] of Object.entries(opts)) {
         if (value !== undefined) body[key] = value;
       }
-      const result = await client.call("certificate.create", [body]);
+      const result = await awaitJobResult(client, await client.call("certificate.create", [body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -268,7 +268,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "Deletion aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.call("certificate.delete", [id, force]);
+      const result = await awaitJobResult(client, await client.call("certificate.delete", [id, force]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -375,7 +375,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       version: z.string().optional().describe("Specific version to download (default: latest)"),
     },
     async ({ train, version }) => {
-      const result = await client.call("update.download", [train ?? null, version ?? null]);
+      const result = describeAsyncJob(await client.call("update.download", [train ?? null, version ?? null]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -499,7 +499,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "Attach aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.call("boot.attach", [dev, { expand }]);
+      const result = describeAsyncJob(await client.call("boot.attach", [dev, { expand }]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -527,7 +527,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Start a scrub of the boot pool to check for and repair data integrity issues.",
     {},
     async () => {
-      const result = await client.call("boot.scrub");
+      const result = describeAsyncJob(await client.call("boot.scrub"));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

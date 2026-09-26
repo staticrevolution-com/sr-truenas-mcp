@@ -3,7 +3,7 @@ import { z } from "zod";
 import { TrueNASClient } from "../client.js";
 import { validateTrueNASPath } from "../validation.js";
 import { parseEpochSeconds, shapeReportingResult } from "../reporting.js";
-import { awaitJobResult } from "../job-utils.js";
+import { awaitJobResult, describeAsyncJob } from "../job-utils.js";
 import { DEFAULT_DOWNLOAD_BYTES, MAX_TRANSFER_BYTES } from "../file-transfer.js";
 
 /**
@@ -423,7 +423,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       config: z.record(z.string(), z.unknown()).describe("Directory services configuration fields to update"),
     },
     async ({ config }) => {
-      const result = await client.call("directoryservices.update", [config]);
+      const result = await awaitJobResult(client, await client.call("directoryservices.update", [config]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -452,7 +452,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "Leave domain aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.call("directoryservices.leave", [{ credential: { credential_type: "KERBEROS_USER", username, password } }]);
+      const result = await awaitJobResult(client, await client.call("directoryservices.leave", [{ credential: { credential_type: "KERBEROS_USER", username, password } }]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -462,7 +462,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Refresh the directory services cache. Forces re-read of users and groups from the directory server.",
     {},
     async () => {
-      const result = await client.call("directoryservices.cache_refresh");
+      const result = describeAsyncJob(await client.call("directoryservices.cache_refresh"));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -522,13 +522,13 @@ export function register(server: McpServer, client: TrueNASClient): void {
       enabled: z.boolean().optional().default(true).describe("Whether the tunable is active"),
     },
     async ({ type, var: varName, value, comment, enabled }) => {
-      const result = await client.call("tunable.create", [{
+      const result = await awaitJobResult(client, await client.call("tunable.create", [{
         type,
         var: varName,
         value,
         comment,
         enabled,
-      }]);
+      }]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -551,7 +551,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (value !== undefined) body.value = value;
       if (comment !== undefined) body.comment = comment;
       if (enabled !== undefined) body.enabled = enabled;
-      const result = await client.call("tunable.update", [id, body]);
+      const result = await awaitJobResult(client, await client.call("tunable.update", [id, body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -563,7 +563,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.number().describe("Tunable ID to delete"),
     },
     async ({ id }) => {
-      const result = await client.call("tunable.delete", [id]);
+      const result = await awaitJobResult(client, await client.call("tunable.delete", [id]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

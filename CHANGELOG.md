@@ -5,6 +5,85 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+⚠ **Version deliberately unassigned.** Three PRs are in flight off `master`,
+each of which would otherwise claim a number and conflict. This is
+behaviour-changing across 36 actions and warrants a **minor**; assign it when
+cutting the release.
+
+### Fixed
+
+- **36 actions reported an enqueue as an outcome.** A `@job` middleware method
+  returns a job id — a bare integer — not a result. Handlers that returned it
+  unchanged meant a **FAILED operation read as success**: `dataset_unlock` with
+  a wrong passphrase, `certificate_create`, `tunable_create`, `app_delete` and
+  32 more all answered with a number that looked like an id and meant nothing
+  about whether the work succeeded.
+
+  This defect was found and fixed for the filesystem handlers in **v1.1.1**. The
+  wider sweep was recorded as a deferred follow-up in the 2026-06-12 field
+  report and never run. Running it found 36 more call sites — 49 job calls
+  exist in `src/tools/`, 10 were already correct, and 3 sit inside Tier-0
+  blocked actions that are never registered.
+
+  **The worst was not a destructive action but a read.**
+  `dataset_encryption_summary` is a job whose *result is the answer*, so it
+  returned an integer where a summary belonged. Verified live before and after:
+  it now returns the real `{name, valid_key, locked, unlock_error, …}` record.
+
+  Classification, and why it is not uniform:
+  - **20 → `awaitJobResult`** — bounded work where the outcome is the point
+    (`dataset_lock`/`unlock`, `service_start`/`stop`/`restart`, the `tunable_*`
+    and `certificate_*` pairs, `mail_send`, `vm_stop`/`restart`,
+    `app_start`/`stop`/`delete`, `docker_config_update`,
+    `directory_services_update`/`leave`, `dataset_encryption_summary`).
+  - **16 → `describeAsyncJob`** — genuinely long work (`pool_create`/`export`/
+    `replace_disk`/`update`, `boot_scrub`/`attach_disk`, `update_download`,
+    `cronjob_run`, `rsync_task_run`, the five image-pulling `app_*` actions,
+    `directory_services_cache_refresh`).
+
+  ⚠ **Ambiguous cases default to `describeAsyncJob`, because the failure modes
+  are asymmetric.** `awaitJobResult` uses `waitForJob`'s 300 s default, which
+  does not merely block — it then **throws a false failure for a job that is
+  still running and will very likely succeed**. On a `pool_update` topology
+  change that is about the worst place to manufacture an error report.
+  Mis-classifying fast work as async only costs verbosity. `pool_update` and
+  `directory_services_cache_refresh` were moved to async on exactly that
+  reasoning.
+
+### Added
+
+- **`src/job-methods.ts`** — the 101 `@job` methods published by TrueNAS
+  26.0.0-BETA.1, captured from `core.get_methods`. This is the one fact here
+  that cannot be re-derived offline, since job-ness belongs to the running
+  middleware. Flagged in the file as decay-prone and due for re-capture against
+  a new TrueNAS major.
+
+- **`src/__tests__/job-wrapping.test.ts`** — gates the half that *is*
+  derivable: every call to a method in that set must be wrapped. It also
+  asserts `awaitJobResult` is always awaited and `describeAsyncJob` never is,
+  derives the Tier-0 exclusion from `safety.ts` rather than hardcoding three
+  names, and carries a positive control on its own scanner so a broken regex
+  cannot make it pass vacuously. Mutation-verified against both failure modes.
+
+### Known limitation
+
+`describeAsyncJob` hands back a `job_id`, and **no registered action can poll
+it** — nothing exposes `core.get_jobs`. That is unchanged by this release and
+is still an improvement over a bare integer, but the handle is not yet usable
+from this server.
+
+A `job_get`/`job_list` action was designed and **deliberately not shipped**. A
+job record embeds the calling credential, the *arguments* of the original call,
+and free-text `error` / `exc_info` / `progress.description` fields in which
+middlewared routinely includes the `repr()` of those arguments. The response
+filter is a key-based denylist and cannot see a secret inside a string, so a
+pass-through action would leak. `core.get_jobs` is also cross-principal — every
+credential's jobs, not the caller's. Adding it safely means a field allowlist
+projected in the handler, gated by a test asserting the projection is closed.
+Recorded rather than quietly attempted.
+
 ## [1.3.0] — 2026-09-13
 
 Five defects hit in a single live operator session against TrueNAS
