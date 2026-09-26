@@ -5,10 +5,26 @@ import { fileURLToPath } from "node:url";
 import { JOB_METHODS } from "../job-methods.js";
 import { BLOCKED_ACTIONS } from "../safety.js";
 
-const TOOLS = resolve(dirname(fileURLToPath(import.meta.url)), "../tools");
-const files = readdirSync(TOOLS)
-  .filter((f) => f.endsWith(".ts") && f !== "index.ts")
-  .map((f) => ({ name: f, text: readFileSync(resolve(TOOLS, f), "utf8") }));
+const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * Every source file that could call `client.call`, not just `src/tools/`.
+ *
+ * ⚠ Scoping this to `src/tools/` was a latent hole: `src/disk-usage.ts`
+ * (added in a sibling PR) is the first non-tools module to call `client.call`
+ * directly, and a future `@job` call there would have been ungated with
+ * nothing to say so. A gate scoped to where the problem happened to live the
+ * first time is a gate that stops covering the codebase as it grows.
+ */
+function collect(dir: string): Array<{ name: string; text: string }> {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    if (e.isDirectory()) return e.name === "__tests__" ? [] : collect(resolve(dir, e.name));
+    if (!e.name.endsWith(".ts") || e.name === "index.ts") return [];
+    const full = resolve(dir, e.name);
+    return [{ name: full.slice(SRC.length + 1), text: readFileSync(full, "utf8") }];
+  });
+}
+const files = collect(SRC);
 
 /**
  * Every call to a `@job` middleware method must be wrapped.
@@ -57,6 +73,8 @@ describe("Every @job middleware call is wrapped", () => {
     // A regex that matches nothing would make every assertion below pass
     // vacuously — the classic way a gate becomes decorative.
     expect(sites.length).toBeGreaterThan(30);
+    // and the widened scan must actually reach beyond src/tools/
+    expect(files.some((f) => !f.name.startsWith("tools/"))).toBe(true);
   });
 
   it("wraps every one in awaitJobResult or describeAsyncJob", () => {
@@ -71,12 +89,17 @@ describe("Every @job middleware call is wrapped", () => {
 
   it("awaits awaitJobResult — it is async, and an unawaited call serialises to {}", () => {
     // ⚠ This is not hypothetical. The 2026-09-26 sweep wrapped 36 call sites
-    // and omitted the outer `await` on all 20 `awaitJobResult` ones.
+    // and omitted the outer `await` on all 18 `awaitJobResult` ones.
     // `JSON.stringify(Promise)` is `{}`, and TypeScript does not object
     // because `JSON.stringify` accepts `any` — so it compiled, and all 305
     // tests passed, while twenty actions returned an empty object.
     const unawaited = files.flatMap(({ name, text }) =>
-      [...text.matchAll(/(.{0,10})awaitJobResult\(/g)]
+      [...text.matchAll(/(.{0,20})awaitJobResult\(/g)]
+        // Exclude the declaration itself — `export async function
+        // awaitJobResult(` is not a call site. Excluding the whole file would
+        // also hide any real call made from it, so discriminate on the
+        // construct, not the filename.
+        .filter((m) => !/\bfunction\s+$/.test(m[1]))
         .filter((m) => !m[1].endsWith("await "))
         .map((m) => `${name}:${text.slice(0, m.index).split("\n").length}`),
     );
