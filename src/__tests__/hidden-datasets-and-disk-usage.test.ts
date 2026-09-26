@@ -183,6 +183,51 @@ describe("filesystem_disk_usage budgets per child, not globally", () => {
     expect(r.children[0].truncated).toBe(false);
   });
 
+
+  it("⚠ NEVER scans more entries than max_entries, however many children there are", async () => {
+    // The gate that was missing. A per-child floor of 1,000 made the global
+    // cap advisory: measured at 45x the requested budget (50 children x 900
+    // files, max_entries 1000 -> entries_scanned 45,050) while the response
+    // reported `limits.max_entries: 1000` in the same object. On the directory
+    // that motivated this action (48,544 child dirs) the floor would have
+    // licensed ~48.5M entries.
+    //
+    // A parameter documented as "stop after scanning this many entries" must
+    // actually stop, and only an assertion on entries_scanned can say so —
+    // every other field looked correct while it overran.
+    const tree: Record<string, Array<Record<string, unknown>>> = {
+      "/root": Array.from({ length: 50 }, (_, i) => ({
+        name: `d${i}`, path: `/root/d${i}`, type: "DIRECTORY", allocation_size: 0,
+      })),
+    };
+    for (let i = 0; i < 50; i++) tree[`/root/d${i}`] = fanout(`/root/d${i}`, 900);
+
+    const r = await measureDiskUsage(fsClient(tree), "/root", {
+      depth: 64, maxEntries: 1_000, timeoutMs: 60_000,
+    });
+    expect(r.entries_scanned).toBeLessThanOrEqual(1_000);
+    expect(r.truncated).toBe(true);
+    expect(r.total_allocation).toBeNull();
+  });
+
+  it("an unreadable subtree is reported as an error, not as a budget stop", async () => {
+    // "budget" tells the operator to raise a limit. For EACCES or a vanished
+    // path no limit will ever help, so the causes must not share a label.
+    const tree = {
+      "/root": [{ name: "denied", path: "/root/denied", type: "DIRECTORY", allocation_size: 0 }],
+    };
+    const client = {
+      call: async (_m: string, params: unknown[] = []) => {
+        const [path] = params as [string];
+        if (path === "/root/denied") throw new Error("[EACCES] permission denied");
+        return tree["/root"];
+      },
+    } as unknown as TrueNASClient;
+    const r = await measureDiskUsage(client, "/root", { depth: 64, maxEntries: 10_000, timeoutMs: 30_000 });
+    expect(r.children[0].truncated).toBe(true);
+    expect(r.children[0].stopped_because).toBe("error");
+  });
+
   it("is registered open-tier and points at ZFS for authoritative totals", () => {
     expect(ACTION_TIERS.filesystem_disk_usage).toBe(SafetyTier.Open);
     const reg = buildRegistry(fsClient({}));
@@ -209,7 +254,16 @@ describe("dataset_get keeps hidden datasets hidden, and ENOENT means absent", ()
     // hidden-by-default is the operator's stated preference, and
     // dataset_zfs_query is the explicit way to ask for them by name.
     const source = readFileSync(resolve(TOOLS, "storage.ts"), "utf8");
-    const getBody = source.slice(source.indexOf('"dataset_get"'), source.indexOf('"dataset_zfs_query"'));
+    const from = source.indexOf('"dataset_get"');
+    const to = source.indexOf('"dataset_zfs_query"');
+    // ⚠ Guard the slice before trusting it. If the two tools were ever
+    // reordered in storage.ts, `from > to` yields an EMPTY string and the
+    // assertion below would pass on nothing — a silent green on the one test
+    // guarding a destructive verification in another repository.
+    expect(from, "dataset_get not found in storage.ts").toBeGreaterThan(-1);
+    expect(to, "dataset_zfs_query not found in storage.ts").toBeGreaterThan(from);
+    const getBody = source.slice(from, to);
+    expect(getBody.length).toBeGreaterThan(200);
     expect(getBody).not.toMatch(/zfs\.resource\.query/);
   });
 

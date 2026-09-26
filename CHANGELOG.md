@@ -106,6 +106,33 @@ Evidence is stated per item, because these were not equally well-founded:
   read, and the consumer set is not known from this repo. Changing the default
   is a deliberate non-decision left to the operator.
 
+### Fixed after independent review
+
+- **`max_entries` did not bound the work it claimed to bound.** The per-child
+  budget carried a `Math.max(1_000, …)` floor, so many children multiplied the
+  cap instead of dividing it — **measured at 45x** (50 children, `max_entries:
+  1000`, `entries_scanned: 45,050`), with the response reporting the
+  honoured-looking limit and the overrun in the same object. Worse, clamping
+  the floor alone was not enough: a budget of 19 still pulled a whole page, so
+  the page size is now clamped to the remaining budget too — **the budget must
+  bound the request, not merely gate whether one is made.** Children reached
+  after exhaustion are recorded as unmeasured rather than walked anyway.
+  Gated by an `entries_scanned <= max_entries` assertion, which is the
+  assertion whose absence let this through.
+- **An unreadable subtree reported `stopped_because: "budget"`**, telling the
+  operator to raise a limit that would never help. EACCES, a vanished path and
+  a transport error now report `"error"`.
+- **A non-array response was treated as an empty, complete directory** — the
+  emptiness-is-not-health shape this module exists to avoid. Now truncated.
+- **`CLAUDE.md` said `dataset_get` falls back to the ZFS namespace** and that
+  its ENOENT means "not surfaced, not necessarily absent" — the exact opposite
+  of the re-scoped code, the CHANGELOG and the test, in the file every session
+  reads first, contradicting a cross-repo contract the rest of the PR protects.
+  Leftover text from the earlier revision.
+- **The cross-repo-contract test could go vacuous** — its source slice would be
+  empty if the two tools were reordered in `storage.ts`, silently passing the
+  one test guarding a destructive verification in another repo.
+
 ### Verified
 
 All of the above exercised against a live 26.0.0-BETA.1 host. `dataset_get`

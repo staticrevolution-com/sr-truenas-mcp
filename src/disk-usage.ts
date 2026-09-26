@@ -60,8 +60,11 @@ export interface DuChild {
    */
   recursive_allocation: number | null;
   truncated: boolean;
-  /** Why it stopped, when it did: "budget" (raise limits) or "depth" (raise depth). */
-  stopped_because?: "budget" | "depth";
+  /**
+   * Why it stopped: "budget" (raise max_entries/timeout_ms), "depth" (raise
+   * depth), or "error" (the subtree could not be read — no limit will help).
+   */
+  stopped_because?: "budget" | "depth" | "error";
 }
 
 export interface DuResult {
@@ -102,19 +105,29 @@ async function listAll(
 
   for (;;) {
     if (exhausted(budget)) return { entries, truncated: true };
+
+    // ⚠ Clamp the page to what the budget can still afford. Checking
+    // `exhausted` before the call is not enough on its own: a budget of 19
+    // still pulled a full page, so 50 children with a 1-entry floor each
+    // fetched 900 rows and the "cap" of 1,000 admitted 45,050. The budget has
+    // to bound the REQUEST, not merely gate whether one is made.
+    const pageSize = Math.min(LISTDIR_MAX_LIMIT, Math.max(1, budget.remaining));
     const page = (await client.call("filesystem.listdir", [
       path,
       [],
-      { limit: LISTDIR_MAX_LIMIT, offset, select: ["name", "path", "type", "allocation_size"] },
+      { limit: pageSize, offset, select: ["name", "path", "type", "allocation_size"] },
     ])) as Array<Record<string, unknown>>;
 
-    if (!Array.isArray(page)) break;
+    // A non-array response is an unknown, not an empty directory. Breaking
+    // here silently reported the subtree as COMPLETE with zero bytes — the
+    // emptiness-is-not-health shape this module exists to avoid.
+    if (!Array.isArray(page)) return { entries, truncated: true };
     entries.push(...page);
     budget.remaining -= page.length;
     budget.scanned += page.length;
 
-    if (page.length < LISTDIR_MAX_LIMIT) break;
-    offset += LISTDIR_MAX_LIMIT;
+    if (page.length < pageSize) break;
+    offset += pageSize;
   }
   return { entries, truncated: false };
 }
@@ -130,21 +143,23 @@ async function walk(
   path: string,
   depthRemaining: number,
   budget: Budget,
-): Promise<{ bytes: number; entries: number; truncated: boolean; reason?: "budget" | "depth" }> {
+): Promise<{ bytes: number; entries: number; truncated: boolean; reason?: "budget" | "depth" | "error" }> {
   if (exhausted(budget)) return { bytes: 0, entries: 0, truncated: true, reason: "budget" };
 
   let listing;
   try {
     listing = await listAll(client, path, budget);
   } catch {
-    // An unreadable subtree is a gap in the measurement, not a zero.
-    return { bytes: 0, entries: 0, truncated: true, reason: "budget" };
+    // An unreadable subtree (EACCES, a vanished path, a transport error) is a
+    // gap in the measurement, not a zero — and NOT a budget stop. Reporting it
+    // as "budget" tells the operator to raise a limit that will never help.
+    return { bytes: 0, entries: 0, truncated: true, reason: "error" };
   }
 
   let bytes = 0;
   let entries = listing.entries.length;
   let truncated = listing.truncated;
-  let reason: "budget" | "depth" | undefined = listing.truncated ? "budget" : undefined;
+  let reason: "budget" | "depth" | "error" | undefined = listing.truncated ? "budget" : undefined;
 
   for (const entry of listing.entries) {
     bytes += Number(entry.allocation_size ?? 0);
@@ -198,6 +213,12 @@ export async function measureDiskUsage(
   let anyTruncated = top.truncated;
   const dirCount = top.entries.filter((e) => e.type === "DIRECTORY").length;
 
+  // Share out only what is actually left, among the children still to come —
+  // so an early cheap child returns its unspent share to the pool rather than
+  // forfeiting it, and the sum across children can never exceed maxEntries.
+  let remainingGlobal = Math.max(0, opts.maxEntries - budget.scanned);
+  let dirsLeft = dirCount;
+
   for (const entry of top.entries) {
     const own = Number(entry.allocation_size ?? 0);
     const childPath = String(entry.path);
@@ -222,13 +243,42 @@ export async function measureDiskUsage(
     // 231 entries. A reader would see zeroes and conclude those trees were
     // small. One oversized subtree must not starve the others, because the
     // whole purpose here is comparing siblings.
+    // ⚠ NO FLOOR. An earlier revision used `Math.max(1_000, …)` so that a
+    // directory with many children still gave each a workable share — but that
+    // floor defeats the global cap entirely: 50 children x a 1,000 floor
+    // licenses 50,000 entries against a requested `max_entries` of 1,000.
+    // Measured at **45x** the stated budget, while the response reported the
+    // honoured-looking limit and the overrun side by side. On the directory
+    // that motivated this action (48,544 child dirs) the floor would have
+    // licensed ~48.5M entries, bounded only by the deadline.
+    //
+    // A parameter documented as "stop after scanning this many entries" must
+    // actually stop. If the resulting per-child share is too small to be
+    // useful, that is the caller's signal to raise `max_entries` — not ours to
+    // overspend quietly on their behalf.
+    if (remainingGlobal <= 0 || Date.now() >= budget.deadline) {
+      // Budget gone. Record the child as unmeasured rather than walking it
+      // anyway — a floor that guarantees every child "at least a little" is
+      // how the cap became advisory in the first place.
+      anyTruncated = true;
+      children.push({
+        name: String(entry.name), path: childPath, type: "DIRECTORY",
+        own_allocation: own, entries: 0, recursive_allocation: null,
+        truncated: true, stopped_because: "budget",
+      });
+      dirsLeft -= 1;
+      continue;
+    }
+
     const perChild: Budget = {
-      remaining: Math.max(1_000, Math.floor(opts.maxEntries / Math.max(1, dirCount))),
+      remaining: Math.max(1, Math.floor(remainingGlobal / Math.max(1, dirsLeft))),
       deadline: budget.deadline,
       scanned: 0,
     };
     const sub = await walk(client, childPath, opts.depth, perChild);
     budget.scanned += perChild.scanned;
+    remainingGlobal = Math.max(0, remainingGlobal - perChild.scanned);
+    dirsLeft -= 1;
     if (sub.truncated) anyTruncated = true;
     children.push({
       name: String(entry.name),
