@@ -24,6 +24,15 @@ const epochParam = z.union([z.string(), z.number()]).transform((value, ctx) => {
   return seconds;
 });
 
+/**
+ * middlewared rejects `query_options.limit` above this.
+ *
+ * ⚠ MERGE NOTE: PR #20 introduces `src/disk-usage.ts`, which exports the same
+ * constant. Whichever lands second should delete this copy and import that one
+ * — two records of one number is the drift this repo keeps fixing.
+ */
+const LISTDIR_MAX_LIMIT = 10_000;
+
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
   // Filesystem
@@ -44,16 +53,76 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "filesystem_listdir",
-    "List contents of a directory. Returns files and subdirectories with metadata. Supports pagination via limit and offset.",
+    "List contents of a directory. Returns an envelope: { path, entries, count, truncated, next_offset }. ALWAYS check 'truncated' — a truncated listing is a partial answer, and absence from it does not mean a file is missing. Supply query_filters to filter server-side.",
     {
       path: z.string().describe("Full directory path to list"),
-      limit: z.number().optional().default(100).describe("Maximum number of entries to return (default: 100)"),
-      offset: z.number().optional().default(0).describe("Number of entries to skip (default: 0)"),
+      query_filters: z
+        .array(z.unknown())
+        .optional()
+        .describe(
+          "Server-side filters, e.g. [[\"name\",\"~\",\"runner-data\"]] or [[\"type\",\"=\",\"DIRECTORY\"]]. " +
+            "Applied by middlewared before limit, so filtering is not defeated by truncation.",
+        ),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(LISTDIR_MAX_LIMIT)
+        .optional()
+        .default(100)
+        .describe(
+          `Maximum entries to return (default: 100, server maximum: ${LISTDIR_MAX_LIMIT}). If more exist, the response says so.`,
+        ),
+      offset: z.number().int().min(0).optional().default(0).describe("Entries to skip (default: 0)"),
     },
-    async ({ path, limit, offset }) => {
+    async ({ path, query_filters, limit, offset }) => {
       const validPath = validateTrueNASPath(path);
-      const result = await client.call("filesystem.listdir", [validPath, [], { limit, offset }]);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+
+      // Ask for one more than the caller wants. If it comes back, more exist —
+      // which is how truncation becomes a fact in the response instead of an
+      // invisible property of it.
+      //
+      // ⚠ This action used to apply a silent `limit: 100` and hardcode the
+      // filter slot to `[]`. Measured 2026-09-26 on a 231-entry directory: it
+      // returned exactly 100 entries, in readdir order rather than sorted, with
+      // no indication anything was withheld — and any filter the caller passed
+      // was dropped by the registry's `.strip()` before it reached here.
+      //
+      // That is the `snapshot_list` defect again in a different organ: correct
+      // iff what you wanted happened to fall inside the first 100 entries. It
+      // is worse here, because the natural next step after a listing is to
+      // conclude something is NOT THERE. A short answer reads as an answer.
+      const overfetch = Math.min(limit + 1, LISTDIR_MAX_LIMIT + 1);
+      const rows = (await client.call("filesystem.listdir", [
+        validPath,
+        query_filters ?? [],
+        { limit: overfetch, offset },
+      ])) as unknown[];
+
+      const truncated = Array.isArray(rows) && rows.length > limit;
+      const entries = truncated ? rows.slice(0, limit) : rows;
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            path: validPath,
+            count: entries.length,
+            truncated,
+            next_offset: truncated ? offset + limit : null,
+            ...(truncated
+              ? {
+                  warning:
+                    `TRUNCATED — more than ${limit} entries match. This listing is PARTIAL: ` +
+                    `absence of a name from it does NOT mean the name is absent from the directory. ` +
+                    `Re-request with offset ${offset + limit}, raise limit (max ${LISTDIR_MAX_LIMIT}), ` +
+                    `or narrow with query_filters.`,
+                }
+              : {}),
+            entries,
+          }, null, 2),
+        }],
+      };
     }
   );
 

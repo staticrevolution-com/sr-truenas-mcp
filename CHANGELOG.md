@@ -5,6 +5,73 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — filesystem_listdir
+
+⚠ **Version unassigned; several PRs are in flight off `master`.** This carries a
+**breaking response-shape change** and warrants a minor.
+
+### Fixed
+
+- **`filesystem_listdir` silently returned a partial directory listing.** It
+  applied a default `limit: 100` and hardcoded the middleware filter slot to
+  `[]`. **Measured 2026-09-26** on a 231-entry directory: it returned exactly
+  100 entries, **in readdir order rather than sorted**, with nothing in the
+  response indicating anything had been withheld. Because the action declared
+  no filter parameter, any `query_filters` a caller supplied were dropped by the
+  registry's `.strip()` before reaching the handler.
+
+  🔑 **This is the `snapshot_list` defect in a different organ: correct iff what
+  you wanted happened to fall inside the first 100 entries.** It is worse here,
+  because the natural next step after listing a directory is to conclude
+  something is **not there** — and a short answer reads as an answer, with no
+  error to notice. A caller deciding whether to create, delete or skip got a
+  confident wrong answer, and `filesystem_stat` on an entry missing from the
+  listing returns a real directory.
+
+  Both halves were **ours**, confirmed by reading `src/tools/filesystem.ts`
+  before blaming middleware — the lesson from `snapshot_list`. Middleware
+  honours filters correctly (verified: a server-side filter on the same
+  directory returns 2 of 231).
+
+### Changed — BREAKING
+
+- **`filesystem_listdir` now returns an envelope**, not a bare array:
+  `{ path, count, truncated, next_offset, warning?, entries }`.
+
+  A silent partial answer cannot be made safe while the response shape has
+  nowhere to say so. Truncation is detected by over-fetching exactly one entry
+  beyond the caller's limit, so `truncated` is a measurement rather than a
+  guess, and `next_offset` advertises the continuation.
+
+  ⚠ Note this is a deliberately *different* decision from leaving
+  `dataset_get`'s default shape alone in the sibling PR. That was a **response
+  size** problem — a usability cost. This is a **correctness** problem: a wrong
+  answer that reads as a right one. Breaking the shape is justified for the
+  second and not the first.
+
+- **`query_filters` is now a parameter**, applied server-side by middlewared
+  *before* the limit — so filtering is not defeated by truncation.
+
+### Verified live
+
+Against the 231-entry directory that produced the report:
+
+```
+default          count=100 truncated=true  next_offset=100
+limit=1000       count=231 truncated=false
+server filter    count=2
+paged via next_offset  231 rows, 231 unique, matches full listing
+negative control count=0  truncated=false   (instrument discriminates)
+```
+
+### Note on the original report
+
+Two of the three reported symptoms reproduce: the 100-entry truncation and the
+ignored filter. **The third — "`limit: 300` was also ignored" — does not.** An
+explicit limit is honoured, then and now. Recorded because a bug report that is
+two-thirds right is still worth acting on, and the third part should not become
+folklore.
+
 ## [1.3.0] — 2026-09-13
 
 Five defects hit in a single live operator session against TrueNAS
