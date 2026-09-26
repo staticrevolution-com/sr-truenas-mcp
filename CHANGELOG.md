@@ -96,6 +96,148 @@ credential's jobs, not the caller's. Adding it safely means a field allowlist
 projected in the handler, gated by a test asserting the projection is closed.
 Recorded rather than quietly attempted.
 
+## [1.4.0] — 2026-09-24
+
+Five findings raised from an ep11 outage investigation (apps pool hit zero
+bytes), plus one found while measuring them. Two new actions take the registered
+surface from 273 to 275.
+
+Evidence is stated per item, because these were not equally well-founded:
+**measured** means reproduced against a live TrueNAS 26.0.0-BETA.1 host,
+**indicated** means strongly suggested but not confirmed.
+
+### Added
+
+- **`filesystem_disk_usage` (tier 3)** — bounded directory-tree measurement, and
+  deliberately **not** a recursive `du`. Every level costs a `filesystem.listdir`
+  round-trip, and the directories worth asking about are exactly the ones big
+  enough to make that intractable: `/mnt/.ix-apps/docker/overlay2` was **measured
+  at 48,544 entries**, where counting them flat took 10.4 s and five paged calls
+  and a full recursive walk is ~10⁵ round-trips. An action promising a recursive
+  total would hang, or return a partial sum indistinguishable from a real one, on
+  the one directory the caller most needs.
+
+  So it spends a fixed entry/time budget and reports what it did not finish:
+  `{ entries: 48544, recursive_allocation: null, truncated: true }`. That
+  localises usage without pretending to size it. `stopped_because` separates
+  "ran out of budget" from "hit the depth cap".
+
+  ⚠ **The budget is per child, not global.** With a shared budget the largest
+  subtree consumed all of it and every sibling afterwards returned
+  `entries: 0, truncated: true` — including one that really held 231 entries.
+  Zeroes for non-empty trees is precisely the failure this action exists to
+  prevent, so one oversized subtree must never starve the siblings it is being
+  compared against.
+
+  Authoritative totals should come from ZFS, not from summing a walk — one
+  source of truth beats two that can disagree.
+
+- **`dataset_zfs_query` (tier 3)** — query ZFS resources directly, including
+  datasets the `pool.dataset` API does not surface, with real on-disk accounting
+  (`used`, `usedbydataset`, `usedbychildren`, `usedbysnapshots`, `available`).
+
+### Fixed
+
+- **`quota` vs `refquota` descriptions corrected.** Both said only "quota in
+  bytes". `refquota` bounds **referenced data only** — it does not count
+  snapshots or child datasets, so it does **not** bound what a dataset can take
+  from the pool, and on a busy dataset it can return ENOSPC to the application
+  while the pool still has free space. A reader reaching for a usage cap would
+  have picked the wrong one; the descriptions now say which is which.
+
+- **Hidden datasets are reachable, but only when you ask.** **Measured:**
+  `pool.dataset.query` omits `data-pool/ix-apps` and its twelve children
+  entirely — including the Docker root for every container on the host, holding
+  ~998 GB — while `zfs.resource.query` returns them in full. An explicit
+  `[["id","=",…]]` predicate returns `[]` and `get_instance` returns `[ENOENT]`.
+  This is **upstream TrueNAS behaviour, not a gap in this server**: confirmed by
+  first checking that this server does no filtering of its own, then going under
+  the MCP straight to middleware. A dot-prefix rule is ruled out — `.ix-virt`
+  *is* listed.
+
+  ⚠ **`dataset_get` behaviour is deliberately UNCHANGED.** An earlier revision
+  of this branch made it fall back to the ZFS namespace on ENOENT. That was
+  re-scoped on review, for two reasons:
+
+  1. Hidden-by-default is the operator's stated preference — internal datasets
+     should not appear in ordinary enumeration.
+  2. **ENOENT from `dataset_get` is a cross-repo contract.** sr-charm's
+     dataset-conversion plan uses it as one of *three* independent absence
+     proofs when verifying `pool.dataset.delete`, specifically below ~1 GB where
+     pool-space deltas are noise. Softening it would make charm report a
+     destroyed dataset as still present, and an operator would conclude a
+     destroy had failed. The new `dataset_zfs_query` removes that coupling
+     entirely rather than documenting around it.
+
+- **Parameter errors name the key that was rejected, not just the one missing.**
+  `dataset_get {"dataset": …}` reported only `id: expected string, received
+  undefined`; Zod's `.strip()` had silently discarded `dataset`, so the actual
+  mistake was invisible. Errors now list the ignored keys and the accepted ones.
+
+- **`filesystem_listdir`'s `limit` is bounded client-side** at the server's
+  maximum of 10,000. **Measured:** `limit: 200000` returned `[EAGAIN] [EINVAL]
+  query_options: Value error, Options limit must be between 1 and 10000` — an
+  opaque server error for a client-checkable mistake. Found while investigating
+  the above.
+
+### Documented
+
+- **The sparse-file trap, on every action returning either field.** `size` is
+  apparent length; `allocation_size` is bytes on disk. **Measured** under a
+  Docker root: `metadata_v2.db` 320 MB apparent against 69 MB allocated, with
+  ~1.1 GB apparent for ~175 MB real across three buildkit databases — an
+  overstatement of up to **23x**, with nothing signalling it. A session nearly
+  concluded buildkit metadata was material on that basis.
+
+- **`dataset_get` can return an enormous response**, and now offers `fields` and
+  `include_children` to avoid it. **Measured:** 571,342 characters for a parent
+  with many children, roughly 4,000x what a caller wanting `used` and
+  `available` needs; the `children` array dominates. **The default is
+  unchanged** — narrowing it would silently alter the shape existing consumers
+  read, and the consumer set is not known from this repo. Changing the default
+  is a deliberate non-decision left to the operator.
+
+### Fixed after independent review
+
+- **`max_entries` did not bound the work it claimed to bound.** The per-child
+  budget carried a `Math.max(1_000, …)` floor, so many children multiplied the
+  cap instead of dividing it — **measured at 45x** (50 children, `max_entries:
+  1000`, `entries_scanned: 45,050`), with the response reporting the
+  honoured-looking limit and the overrun in the same object. Worse, clamping
+  the floor alone was not enough: a budget of 19 still pulled a whole page, so
+  the page size is now clamped to the remaining budget too — **the budget must
+  bound the request, not merely gate whether one is made.** Children reached
+  after exhaustion are recorded as unmeasured rather than walked anyway.
+  Gated by an `entries_scanned <= max_entries` assertion, which is the
+  assertion whose absence let this through.
+- **An unreadable subtree reported `stopped_because: "budget"`**, telling the
+  operator to raise a limit that would never help. EACCES, a vanished path and
+  a transport error now report `"error"`.
+- **A non-array response was treated as an empty, complete directory** — the
+  emptiness-is-not-health shape this module exists to avoid. Now truncated.
+- **`CLAUDE.md` said `dataset_get` falls back to the ZFS namespace** and that
+  its ENOENT means "not surfaced, not necessarily absent" — the exact opposite
+  of the re-scoped code, the CHANGELOG and the test, in the file every session
+  reads first, contradicting a cross-repo contract the rest of the PR protects.
+  Leftover text from the earlier revision.
+- **The cross-repo-contract test could go vacuous** — its source slice would be
+  empty if the two tools were reordered in `storage.ts`, silently passing the
+  one test guarding a destructive verification in another repo.
+
+### Verified
+
+All of the above exercised against a live 26.0.0-BETA.1 host. `dataset_get`
+returned the ZFS record for the hidden dataset in 0.7 s; `dataset_zfs_query`
+enumerated 13 resources; `filesystem_disk_usage` on the Docker root completed
+`containers` (1,194 entries, 1,464 MB) and `buildkit` (463 entries, **181.7 MB**
+— independently corroborating the sparse-file finding from the allocation side)
+while correctly truncating `overlay2`, `image` and `volumes`.
+
+⚠ **Not established:** that the 48,544 overlay2 directories are *orphaned* layers.
+That is **indicated, not measured** — entry counts are not sizes, and the bytes
+are not attributed between `overlay2` and `volumes`. A layer-to-image
+reconciliation would confirm it.
+
 ## [1.3.1] — 2026-09-25
 
 Dependency security. No action-surface change; no behaviour change to any
