@@ -5,6 +5,57 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`snapshot_task_update` (tier 2)** — edit a periodic snapshot task in place.
+
+  🔑 **Its absence was not an inconvenience; it pushed a low-risk edit onto a
+  high-risk path.** The only MCP route to changing a task was
+  `snapshot_task_delete` + `snapshot_task_create`, which briefly leaves the
+  dataset tree with **no periodic snapshot task at all** (for `<pool>/apps`:
+  90 datasets, 14-day retention, every stateful service on the box), changes
+  the task's id so external references break, and silently drops any field
+  nobody re-typed — producing a task that looks right and retains differently,
+  undetectable because the symptom is a snapshot that *is not there*, months
+  later. If the delete succeeds and the create fails, all future snapshots for
+  that tree are silently lost.
+
+  ⚠ **It forwards only the fields the caller supplied.**
+  `pool.snapshottask.update` is a true partial update (every schema field
+  optional; the 26.0 handler merges via `new = old.updated(data)`), so omitted
+  fields are preserved. That is a property of the upstream method, not of this
+  handler — building a full object and filling gaps with nulls would reproduce
+  Portainer's `git/redeploy`-wipes-`Env` defect one system over, so the sparse
+  body is gated by a test asserting the payload contains *exactly* the supplied
+  keys.
+
+  An update that would change nothing is refused rather than returning the task
+  and reading as a successful edit.
+
+### Documented
+
+- **`dataset_zfs_query`'s response shape**, because getting it wrong yields
+  plausible-looking zeros rather than an error. Values are **not** top-level:
+  each node is `{name, properties: {<key>: {value, raw, source}}, children: []}`,
+  so it is `properties.used.value` and **`node.used` is `undefined`** — a parser
+  reading the latter prints `0` for every row. **Measured:** a caller
+  enumerating 90 datasets got `0.00` for all of them, and only caught it because
+  the answer was obviously absurd; a subtler mismatch would have produced
+  believable numbers. Also, `get_children: true` returns a **flat array** of all
+  matching resources with `children: []` on each node, not a nested tree.
+
+- **The CRUD families still missing an `update` verb**, recorded as a test
+  rather than prose so the gap stays visible. Verified against
+  `core.get_methods` on 26.0.0-BETA.1: `acme_dns_authenticator`, `api_key`,
+  `certificate`, `iscsi_initiator`, `iscsi_targetextent`, `keychaincredential`,
+  `network_static_route`, `snapshot`, `system_ntp_server` each have an `update`
+  in middleware this server does not expose. `bootenv` is in the list but is
+  **not** a gap — `boot.environment.update` genuinely does not exist.
+  `snapshot_task` was one instance of a pattern; fixing it without recording
+  the pattern would leave the next caller to rediscover it the same way.
+
 ## [1.4.0] — 2026-09-26
 
 Five findings raised from an ep11 outage investigation (apps pool hit zero
