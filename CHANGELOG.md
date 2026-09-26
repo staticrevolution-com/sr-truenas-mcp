@@ -33,15 +33,27 @@ cutting the release.
   it now returns the real `{name, valid_key, locked, unlock_error, …}` record.
 
   Classification, and why it is not uniform:
-  - **20 → `awaitJobResult`** — bounded work where the outcome is the point
-    (`dataset_lock`/`unlock`, `service_start`/`stop`/`restart`, the `tunable_*`
-    and `certificate_*` pairs, `mail_send`, `vm_stop`/`restart`,
-    `app_start`/`stop`/`delete`, `docker_config_update`,
-    `directory_services_update`/`leave`, `dataset_encryption_summary`).
-  - **16 → `describeAsyncJob`** — genuinely long work (`pool_create`/`export`/
+  - **18 → `awaitJobResult`** — bounded work where the outcome is the point
+    (`dataset_lock`/`unlock`/`encryption_summary`, `service_start`/`stop`/
+    `restart`, the `tunable_*` and `certificate_*` pairs, `mail_send`,
+    `vm_restart`, `app_start`/`stop`/`delete`,
+    `directory_services_update`/`leave`).
+  - **18 → `describeAsyncJob`** — genuinely long work (`pool_create`/`export`/
     `replace_disk`/`update`, `boot_scrub`/`attach_disk`, `update_download`,
     `cronjob_run`, `rsync_task_run`, the five image-pulling `app_*` actions,
-    `directory_services_cache_refresh`).
+    `directory_services_cache_refresh`, plus the two below).
+
+  ⚠ **`docker_config_update` and `vm_stop` were reclassified from await to
+  handle during review, on measurements this repo did not have.**
+  `docker.update` re-initialises the apps pool and restarts the Docker daemon —
+  against a store measured at **998.1 GB with 122 containers and 48,544
+  overlay2 directories**, where anything that walks the tree is slow enough that
+  `/system/df` times out. 300 s is not a safe bound there, and the false-failure
+  case is the worst available: an operator reads "failed" on a pool migration
+  that is still running, and retries it. `vm.stop` with `force: false` waits on
+  **ACPI guest shutdown, which has no upper bound** — a hung guest never
+  completes. Returning a handle for a long job is never wrong; awaiting one is
+  wrong exactly when it matters most.
 
   ⚠ **Ambiguous cases default to `describeAsyncJob`, because the failure modes
   are asymmetric.** `awaitJobResult` uses `waitForJob`'s 300 s default, which

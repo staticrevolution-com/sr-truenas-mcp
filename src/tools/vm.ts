@@ -195,7 +195,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       force: z.boolean().optional().default(false).describe("Force stop (power off) instead of graceful shutdown"),
     },
     async ({ id, force }) => {
-      const result = await awaitJobResult(client, await client.call("vm.stop", [id, { force }]));
+      const result = describeAsyncJob(await client.call("vm.stop", [id, { force }]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -598,7 +598,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (params.pool !== undefined) body.pool = params.pool;
       if (params.enable_image_updates !== undefined) body.enable_image_updates = params.enable_image_updates;
       if (params.address_pools !== undefined) body.address_pools = params.address_pools;
-      const result = await awaitJobResult(client, await client.call("docker.update", [body]));
+      const result = describeAsyncJob(await client.call("docker.update", [body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
