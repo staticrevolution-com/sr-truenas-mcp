@@ -206,6 +206,28 @@ export class TrueNASClient {
       rejectUnauthorized: this.verifySsl,
       handshakeTimeout: 10_000,
       maxPayload: 10 * 1024 * 1024, // 10MB
+
+      // ⚠ ws 8.21 introduced a client-side `maxFragments` default of 16,384.
+      // `maxPayload` bounds total SIZE; this bounds the number of FRAMES one
+      // message may arrive in, and it is a new limit we never opted into.
+      //
+      // Measured across both versions during review: 16,384 fragments pass on
+      // 8.20.0 and 8.21.3; 16,385 passes on 8.20.0 and throws
+      // WS_ERR_TOO_MANY_BUFFERED_PARTS on 8.21.3. A 9.4 MB *unfragmented*
+      // message is unaffected either way.
+      //
+      // TrueNAS would have to split one response into >16,384 frames
+      // (averaging <640 B/frame at our 10 MB cap) to hit it, which we could
+      // not observe happening — but the failure mode if it ever did is the
+      // worst kind to diagnose: a socket-level error trips failAllPending,
+      // tears the connection, and surfaces as intermittent failures spread
+      // across every action category, looking like a network or TrueNAS fault
+      // rather than a dependency default. `0` restores the pre-8.21 behaviour;
+      // maxPayload still bounds the memory.
+      // @types/ws (8.5.x) predates this option, so the literal is widened
+      // rather than the whole options object being cast away — a blanket cast
+      // here would also silence a genuine typo in any sibling field.
+      ...({ maxFragments: 0 } as { maxFragments?: number }),
     });
 
     await new Promise<void>((resolve, reject) => {
