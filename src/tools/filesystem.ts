@@ -45,9 +45,16 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "filesystem_listdir",
-    `List contents of a directory. Returns files and subdirectories with metadata. Supports pagination via limit and offset. ${SPARSE_FILE_NOTE}`,
+    `List contents of a directory. Returns an envelope: { path, entries, count, truncated, next_offset }. ALWAYS check 'truncated' — a truncated listing is a partial answer, and absence from it does not mean a file is missing. Supply query_filters to filter server-side. ${SPARSE_FILE_NOTE}`,
     {
       path: z.string().describe("Full directory path to list"),
+      query_filters: z
+        .array(z.unknown())
+        .optional()
+        .describe(
+          "Server-side filters, e.g. [[\"name\",\"~\",\"runner-data\"]] or [[\"type\",\"=\",\"DIRECTORY\"]]. " +
+            "Applied by middlewared before limit, so filtering is not defeated by truncation.",
+        ),
       limit: z
         .number()
         .int()
@@ -56,14 +63,77 @@ export function register(server: McpServer, client: TrueNASClient): void {
         .optional()
         .default(100)
         .describe(
-          `Maximum number of entries to return (default: 100, server maximum: ${LISTDIR_MAX_LIMIT}). Page with offset for larger directories.`,
+          `Maximum entries to return (default: 100, server maximum: ${LISTDIR_MAX_LIMIT}). If more exist, the response says so.`,
         ),
-      offset: z.number().int().min(0).optional().default(0).describe("Number of entries to skip (default: 0)"),
+      offset: z.number().int().min(0).optional().default(0).describe("Entries to skip (default: 0)"),
     },
-    async ({ path, limit, offset }) => {
+    async ({ path, query_filters, limit, offset }) => {
       const validPath = validateTrueNASPath(path);
-      const result = await client.call("filesystem.listdir", [validPath, [], { limit, offset }]);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+
+      // Ask for one more than the caller wants. If it comes back, more exist —
+      // which is how truncation becomes a fact in the response instead of an
+      // invisible property of it.
+      //
+      // ⚠ This action used to apply a silent `limit: 100` and hardcode the
+      // filter slot to `[]`. Measured 2026-09-26 on a 231-entry directory: it
+      // returned exactly 100 entries, in readdir order rather than sorted, with
+      // no indication anything was withheld — and any filter the caller passed
+      // was dropped by the registry's `.strip()` before it reached here.
+      //
+      // That is the `snapshot_list` defect again in a different organ: correct
+      // iff what you wanted happened to fall inside the first 100 entries. It
+      // is worse here, because the natural next step after a listing is to
+      // conclude something is NOT THERE. A short answer reads as an answer.
+      // ⚠ The over-fetch must never exceed the server's own cap. An earlier
+      // revision used `Math.min(limit + 1, LISTDIR_MAX_LIMIT + 1)`, which asks
+      // for 10001 at `limit: 10000` — and middlewared rejects that outright
+      // with `[EINVAL] Options limit must be between 1 and 10000`. The action
+      // therefore failed at exactly the value its own truncation warning tells
+      // callers to use. Caught in review; the test mock had not modelled the
+      // server cap, so nothing failed.
+      const overfetch = Math.min(limit + 1, LISTDIR_MAX_LIMIT);
+      const rows = (await client.call("filesystem.listdir", [
+        validPath,
+        query_filters ?? [],
+        { limit: overfetch, offset },
+      ])) as unknown[];
+
+      const count = Array.isArray(rows) ? rows.length : 0;
+
+      // Two distinct reasons the listing may be partial:
+      //   - we got more than the caller asked for  -> there are definitely more
+      //   - we got exactly the SERVER cap          -> we cannot prove otherwise
+      // The second is conservative by design: at `limit: 10000` the over-fetch
+      // has nowhere to go, so completeness is unprovable and we decline to
+      // claim it rather than reporting a possibly-partial listing as whole.
+      const atServerCap = count === LISTDIR_MAX_LIMIT;
+      const truncated = count > limit || atServerCap;
+      const entries = Array.isArray(rows) ? rows.slice(0, limit) : [];
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            path: validPath,
+            count: entries.length,
+            truncated,
+            next_offset: truncated ? offset + entries.length : null,
+            ...(truncated
+              ? {
+                  warning:
+                    (atServerCap && count <= limit
+                      ? `AT THE SERVER CAP (${LISTDIR_MAX_LIMIT}) — completeness cannot be proven. `
+                      : `TRUNCATED — more than ${limit} entries match. `) +
+                    `This listing may be PARTIAL: ` +
+                    `absence of a name from it does NOT mean the name is absent from the directory. ` +
+                    `Re-request with offset ${offset + limit}, raise limit (max ${LISTDIR_MAX_LIMIT}), ` +
+                    `or narrow with query_filters.`,
+                }
+              : {}),
+            entries,
+          }, null, 2),
+        }],
+      };
     }
   );
 
