@@ -5,188 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — filesystem_listdir
-
-⚠ **Version unassigned; several PRs are in flight off `master`.** This carries a
-**breaking response-shape change** and warrants a minor.
-
-### Fixed
-
-- **`filesystem_listdir` silently returned a partial directory listing.** It
-  applied a default `limit: 100` and hardcoded the middleware filter slot to
-  `[]`. **Measured 2026-09-26** on a 231-entry directory: it returned exactly
-  100 entries, **in readdir order rather than sorted**, with nothing in the
-  response indicating anything had been withheld. Because the action declared
-  no filter parameter, any `query_filters` a caller supplied were dropped by the
-  registry's `.strip()` before reaching the handler.
-
-  🔑 **This is the `snapshot_list` defect in a different organ: correct iff what
-  you wanted happened to fall inside the first 100 entries.** It is worse here,
-  because the natural next step after listing a directory is to conclude
-  something is **not there** — and a short answer reads as an answer, with no
-  error to notice. A caller deciding whether to create, delete or skip got a
-  confident wrong answer, and `filesystem_stat` on an entry missing from the
-  listing returns a real directory.
-
-  Both halves were **ours**, confirmed by reading `src/tools/filesystem.ts`
-  before blaming middleware — the lesson from `snapshot_list`. Middleware
-  honours filters correctly (verified: a server-side filter on the same
-  directory returns 2 of 231).
-
-### Changed — BREAKING
-
-- **`filesystem_listdir` now returns an envelope**, not a bare array:
-  `{ path, count, truncated, next_offset, warning?, entries }`.
-
-  A silent partial answer cannot be made safe while the response shape has
-  nowhere to say so. Truncation is detected by over-fetching exactly one entry
-  beyond the caller's limit, so `truncated` is a measurement rather than a
-  guess, and `next_offset` advertises the continuation.
-
-  ⚠ Note this is a deliberately *different* decision from leaving
-  `dataset_get`'s default shape alone in the sibling PR. That was a **response
-  size** problem — a usability cost. This is a **correctness** problem: a wrong
-  answer that reads as a right one. Breaking the shape is justified for the
-  second and not the first.
-
-- **`query_filters` is now a parameter**, applied server-side by middlewared
-  *before* the limit — so filtering is not defeated by truncation.
-
-### Verified live
-
-Against the 231-entry directory that produced the report:
-
-```
-default          count=100 truncated=true  next_offset=100
-limit=1000       count=231 truncated=false
-server filter    count=2
-paged via next_offset  231 rows, 231 unique, matches full listing
-negative control count=0  truncated=false   (instrument discriminates)
-```
-
-### The danger, demonstrated
-
-On the same directory, listing the Docker volume set — 14 compose-scoped
-`gh-runners_runner-data-*` volumes among 231 entries:
-
-```
-default (100-entry) listing : 9 of 14 visible
-full listing                : 14 of 14
-INVISIBLE to the default    : homelab-1, sr-7, sr-3, homelab-2, sr-4
-order                       : NOT sorted — readdir order
-```
-
-⚠ **`filesystem_stat` on one of the invisible five returns a real DIRECTORY.**
-That is the whole defect in one line: the listing said a volume was not there,
-and it was. Five of fourteen runners were unlistable, in an arbitrary order
-that made the gap look like a complete answer.
-
-### Note on the original report
-
-Three of the four reported symptoms reproduce exactly — the 100-entry
-truncation, the dropped filter, and the readdir-order gap (the reporter named
-`sr-3`, `sr-4` and `sr-7` as missing from between `sr-2` and `sr-5`; all three
-are in the invisible set above).
-
-**The fourth — "`limit: 300` was also ignored" — does not reproduce.** An
-explicit limit is honoured, then and now (`limit: 300` → 231 entries). The most
-likely explanation is that the limit never reached the handler — a string
-instead of a number, or nested where the registry's `.strip()` discarded it
-silently. ⚠ **That is the same failure as the dropped filter, one parameter
-over**, which makes the mechanism general rather than filter-specific: any
-parameter an action does not declare, or declares with a different type, is
-dropped without a word. Worth knowing beyond this action.
-
-⚠ **Version deliberately unassigned.** Three PRs are in flight off `master`,
-each of which would otherwise claim a number and conflict. This is
-behaviour-changing across 36 actions and warrants a **minor**; assign it when
-cutting the release.
-
-### Fixed
-
-- **36 actions reported an enqueue as an outcome.** A `@job` middleware method
-  returns a job id — a bare integer — not a result. Handlers that returned it
-  unchanged meant a **FAILED operation read as success**: `dataset_unlock` with
-  a wrong passphrase, `certificate_create`, `tunable_create`, `app_delete` and
-  32 more all answered with a number that looked like an id and meant nothing
-  about whether the work succeeded.
-
-  This defect was found and fixed for the filesystem handlers in **v1.1.1**. The
-  wider sweep was recorded as a deferred follow-up in the 2026-06-12 field
-  report and never run. Running it found 36 more call sites — 49 job calls
-  exist in `src/tools/`, 10 were already correct, and 3 sit inside Tier-0
-  blocked actions that are never registered.
-
-  **The worst was not a destructive action but a read.**
-  `dataset_encryption_summary` is a job whose *result is the answer*, so it
-  returned an integer where a summary belonged. Verified live before and after:
-  it now returns the real `{name, valid_key, locked, unlock_error, …}` record.
-
-  Classification, and why it is not uniform:
-  - **18 → `awaitJobResult`** — bounded work where the outcome is the point
-    (`dataset_lock`/`unlock`/`encryption_summary`, `service_start`/`stop`/
-    `restart`, the `tunable_*` and `certificate_*` pairs, `mail_send`,
-    `vm_restart`, `app_start`/`stop`/`delete`,
-    `directory_services_update`/`leave`).
-  - **18 → `describeAsyncJob`** — genuinely long work (`pool_create`/`export`/
-    `replace_disk`/`update`, `boot_scrub`/`attach_disk`, `update_download`,
-    `cronjob_run`, `rsync_task_run`, the five image-pulling `app_*` actions,
-    `directory_services_cache_refresh`, plus the two below).
-
-  ⚠ **`docker_config_update` and `vm_stop` were reclassified from await to
-  handle during review, on measurements this repo did not have.**
-  `docker.update` re-initialises the apps pool and restarts the Docker daemon —
-  against a store measured at **998.1 GB with 122 containers and 48,544
-  overlay2 directories**, where anything that walks the tree is slow enough that
-  `/system/df` times out. 300 s is not a safe bound there, and the false-failure
-  case is the worst available: an operator reads "failed" on a pool migration
-  that is still running, and retries it. `vm.stop` with `force: false` waits on
-  **ACPI guest shutdown, which has no upper bound** — a hung guest never
-  completes. Returning a handle for a long job is never wrong; awaiting one is
-  wrong exactly when it matters most.
-
-  ⚠ **Ambiguous cases default to `describeAsyncJob`, because the failure modes
-  are asymmetric.** `awaitJobResult` uses `waitForJob`'s 300 s default, which
-  does not merely block — it then **throws a false failure for a job that is
-  still running and will very likely succeed**. On a `pool_update` topology
-  change that is about the worst place to manufacture an error report.
-  Mis-classifying fast work as async only costs verbosity. `pool_update` and
-  `directory_services_cache_refresh` were moved to async on exactly that
-  reasoning.
-
-### Added
-
-- **`src/job-methods.ts`** — the 101 `@job` methods published by TrueNAS
-  26.0.0-BETA.1, captured from `core.get_methods`. This is the one fact here
-  that cannot be re-derived offline, since job-ness belongs to the running
-  middleware. Flagged in the file as decay-prone and due for re-capture against
-  a new TrueNAS major.
-
-- **`src/__tests__/job-wrapping.test.ts`** — gates the half that *is*
-  derivable: every call to a method in that set must be wrapped. It also
-  asserts `awaitJobResult` is always awaited and `describeAsyncJob` never is,
-  derives the Tier-0 exclusion from `safety.ts` rather than hardcoding three
-  names, and carries a positive control on its own scanner so a broken regex
-  cannot make it pass vacuously. Mutation-verified against both failure modes.
-
-### Known limitation
-
-`describeAsyncJob` hands back a `job_id`, and **no registered action can poll
-it** — nothing exposes `core.get_jobs`. That is unchanged by this release and
-is still an improvement over a bare integer, but the handle is not yet usable
-from this server.
-
-A `job_get`/`job_list` action was designed and **deliberately not shipped**. A
-job record embeds the calling credential, the *arguments* of the original call,
-and free-text `error` / `exc_info` / `progress.description` fields in which
-middlewared routinely includes the `repr()` of those arguments. The response
-filter is a key-based denylist and cannot see a secret inside a string, so a
-pass-through action would leak. `core.get_jobs` is also cross-principal — every
-credential's jobs, not the caller's. Adding it safely means a field allowlist
-projected in the handler, gated by a test asserting the projection is closed.
-Recorded rather than quietly attempted.
-
-## [1.4.0] — 2026-09-24
+## [1.4.0] — 2026-09-26
 
 Five findings raised from an ep11 outage investigation (apps pool hit zero
 bytes), plus one found while measuring them. Two new actions take the registered
@@ -327,6 +146,177 @@ while correctly truncating `overlay2`, `image` and `volumes`.
 That is **indicated, not measured** — entry counts are not sizes, and the bytes
 are not attributed between `overlay2` and `volumes`. A layer-to-image
 reconciliation would confirm it.
+
+### Fixed
+
+- **`filesystem_listdir` silently returned a partial directory listing.** It
+  applied a default `limit: 100` and hardcoded the middleware filter slot to
+  `[]`. **Measured 2026-09-26** on a 231-entry directory: it returned exactly
+  100 entries, **in readdir order rather than sorted**, with nothing in the
+  response indicating anything had been withheld. Because the action declared
+  no filter parameter, any `query_filters` a caller supplied were dropped by the
+  registry's `.strip()` before reaching the handler.
+
+  🔑 **This is the `snapshot_list` defect in a different organ: correct iff what
+  you wanted happened to fall inside the first 100 entries.** It is worse here,
+  because the natural next step after listing a directory is to conclude
+  something is **not there** — and a short answer reads as an answer, with no
+  error to notice. A caller deciding whether to create, delete or skip got a
+  confident wrong answer, and `filesystem_stat` on an entry missing from the
+  listing returns a real directory.
+
+  Both halves were **ours**, confirmed by reading `src/tools/filesystem.ts`
+  before blaming middleware — the lesson from `snapshot_list`. Middleware
+  honours filters correctly (verified: a server-side filter on the same
+  directory returns 2 of 231).
+
+### Changed — BREAKING
+
+- **`filesystem_listdir` now returns an envelope**, not a bare array:
+  `{ path, count, truncated, next_offset, warning?, entries }`.
+
+  A silent partial answer cannot be made safe while the response shape has
+  nowhere to say so. Truncation is detected by over-fetching exactly one entry
+  beyond the caller's limit, so `truncated` is a measurement rather than a
+  guess, and `next_offset` advertises the continuation.
+
+  ⚠ Note this is a deliberately *different* decision from leaving
+  `dataset_get`'s default shape alone in the sibling PR. That was a **response
+  size** problem — a usability cost. This is a **correctness** problem: a wrong
+  answer that reads as a right one. Breaking the shape is justified for the
+  second and not the first.
+
+- **`query_filters` is now a parameter**, applied server-side by middlewared
+  *before* the limit — so filtering is not defeated by truncation.
+
+### Verified live
+
+Against the 231-entry directory that produced the report:
+
+```
+default          count=100 truncated=true  next_offset=100
+limit=1000       count=231 truncated=false
+server filter    count=2
+paged via next_offset  231 rows, 231 unique, matches full listing
+negative control count=0  truncated=false   (instrument discriminates)
+```
+
+### The danger, demonstrated
+
+On the same directory, listing the Docker volume set — 14 compose-scoped
+`gh-runners_runner-data-*` volumes among 231 entries:
+
+```
+default (100-entry) listing : 9 of 14 visible
+full listing                : 14 of 14
+INVISIBLE to the default    : homelab-1, sr-7, sr-3, homelab-2, sr-4
+order                       : NOT sorted — readdir order
+```
+
+⚠ **`filesystem_stat` on one of the invisible five returns a real DIRECTORY.**
+That is the whole defect in one line: the listing said a volume was not there,
+and it was. Five of fourteen runners were unlistable, in an arbitrary order
+that made the gap look like a complete answer.
+
+### Note on the original report
+
+Three of the four reported symptoms reproduce exactly — the 100-entry
+truncation, the dropped filter, and the readdir-order gap (the reporter named
+`sr-3`, `sr-4` and `sr-7` as missing from between `sr-2` and `sr-5`; all three
+are in the invisible set above).
+
+**The fourth — "`limit: 300` was also ignored" — does not reproduce.** An
+explicit limit is honoured, then and now (`limit: 300` → 231 entries). The most
+likely explanation is that the limit never reached the handler — a string
+instead of a number, or nested where the registry's `.strip()` discarded it
+silently. ⚠ **That is the same failure as the dropped filter, one parameter
+over**, which makes the mechanism general rather than filter-specific: any
+parameter an action does not declare, or declares with a different type, is
+dropped without a word. Worth knowing beyond this action.
+
+### Fixed
+
+- **36 actions reported an enqueue as an outcome.** A `@job` middleware method
+  returns a job id — a bare integer — not a result. Handlers that returned it
+  unchanged meant a **FAILED operation read as success**: `dataset_unlock` with
+  a wrong passphrase, `certificate_create`, `tunable_create`, `app_delete` and
+  32 more all answered with a number that looked like an id and meant nothing
+  about whether the work succeeded.
+
+  This defect was found and fixed for the filesystem handlers in **v1.1.1**. The
+  wider sweep was recorded as a deferred follow-up in the 2026-06-12 field
+  report and never run. Running it found 36 more call sites — 49 job calls
+  exist in `src/tools/`, 10 were already correct, and 3 sit inside Tier-0
+  blocked actions that are never registered.
+
+  **The worst was not a destructive action but a read.**
+  `dataset_encryption_summary` is a job whose *result is the answer*, so it
+  returned an integer where a summary belonged. Verified live before and after:
+  it now returns the real `{name, valid_key, locked, unlock_error, …}` record.
+
+  Classification, and why it is not uniform:
+  - **18 → `awaitJobResult`** — bounded work where the outcome is the point
+    (`dataset_lock`/`unlock`/`encryption_summary`, `service_start`/`stop`/
+    `restart`, the `tunable_*` and `certificate_*` pairs, `mail_send`,
+    `vm_restart`, `app_start`/`stop`/`delete`,
+    `directory_services_update`/`leave`).
+  - **18 → `describeAsyncJob`** — genuinely long work (`pool_create`/`export`/
+    `replace_disk`/`update`, `boot_scrub`/`attach_disk`, `update_download`,
+    `cronjob_run`, `rsync_task_run`, the five image-pulling `app_*` actions,
+    `directory_services_cache_refresh`, plus the two below).
+
+  ⚠ **`docker_config_update` and `vm_stop` were reclassified from await to
+  handle during review, on measurements this repo did not have.**
+  `docker.update` re-initialises the apps pool and restarts the Docker daemon —
+  against a store measured at **998.1 GB with 122 containers and 48,544
+  overlay2 directories**, where anything that walks the tree is slow enough that
+  `/system/df` times out. 300 s is not a safe bound there, and the false-failure
+  case is the worst available: an operator reads "failed" on a pool migration
+  that is still running, and retries it. `vm.stop` with `force: false` waits on
+  **ACPI guest shutdown, which has no upper bound** — a hung guest never
+  completes. Returning a handle for a long job is never wrong; awaiting one is
+  wrong exactly when it matters most.
+
+  ⚠ **Ambiguous cases default to `describeAsyncJob`, because the failure modes
+  are asymmetric.** `awaitJobResult` uses `waitForJob`'s 300 s default, which
+  does not merely block — it then **throws a false failure for a job that is
+  still running and will very likely succeed**. On a `pool_update` topology
+  change that is about the worst place to manufacture an error report.
+  Mis-classifying fast work as async only costs verbosity. `pool_update` and
+  `directory_services_cache_refresh` were moved to async on exactly that
+  reasoning.
+
+### Added
+
+- **`src/job-methods.ts`** — the 101 `@job` methods published by TrueNAS
+  26.0.0-BETA.1, captured from `core.get_methods`. This is the one fact here
+  that cannot be re-derived offline, since job-ness belongs to the running
+  middleware. Flagged in the file as decay-prone and due for re-capture against
+  a new TrueNAS major.
+
+- **`src/__tests__/job-wrapping.test.ts`** — gates the half that *is*
+  derivable: every call to a method in that set must be wrapped. It also
+  asserts `awaitJobResult` is always awaited and `describeAsyncJob` never is,
+  derives the Tier-0 exclusion from `safety.ts` rather than hardcoding three
+  names, and carries a positive control on its own scanner so a broken regex
+  cannot make it pass vacuously. Mutation-verified against both failure modes.
+
+### Known limitation
+
+`describeAsyncJob` hands back a `job_id`, and **no registered action can poll
+it** — nothing exposes `core.get_jobs`. That is unchanged by this release and
+is still an improvement over a bare integer, but the handle is not yet usable
+from this server.
+
+A `job_get`/`job_list` action was designed and **deliberately not shipped**. A
+job record embeds the calling credential, the *arguments* of the original call,
+and free-text `error` / `exc_info` / `progress.description` fields in which
+middlewared routinely includes the `repr()` of those arguments. The response
+filter is a key-based denylist and cannot see a secret inside a string, so a
+pass-through action would leak. `core.get_jobs` is also cross-principal — every
+credential's jobs, not the caller's. Adding it safely means a field allowlist
+projected in the handler, gated by a test asserting the projection is closed.
+Recorded rather than quietly attempted.
 
 ## [1.3.1] — 2026-09-25
 
