@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
+import { awaitJobResult, describeAsyncJob } from "../job-utils.js";
 
 /**
  * Normalize a VM `cpu_mode` to the hyphenated form the TrueNAS middleware
@@ -194,7 +195,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       force: z.boolean().optional().default(false).describe("Force stop (power off) instead of graceful shutdown"),
     },
     async ({ id, force }) => {
-      const result = await client.call("vm.stop", [id, { force }]);
+      const result = describeAsyncJob(await client.call("vm.stop", [id, { force }]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -206,7 +207,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.number().describe("Numeric ID of the VM to restart"),
     },
     async ({ id }) => {
-      const result = await client.call("vm.restart", [id]);
+      const result = await awaitJobResult(client, await client.call("vm.restart", [id]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -414,7 +415,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (params.train !== undefined) body.train = params.train;
       if (params.version !== undefined) body.version = params.version;
       if (params.values !== undefined) body.values = params.values;
-      const result = await client.call("app.create", [body]);
+      const result = describeAsyncJob(await client.call("app.create", [body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -427,7 +428,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       values: z.record(z.string(), z.unknown()).describe("Updated configuration values"),
     },
     async ({ id, values }) => {
-      const result = await client.call("app.update", [id, { values }]);
+      const result = describeAsyncJob(await client.call("app.update", [id, { values }]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -445,7 +446,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "App deletion aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.call("app.delete", [id]);
+      const result = await awaitJobResult(client, await client.call("app.delete", [id]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -457,7 +458,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.string().describe("App ID (name) of the app to start"),
     },
     async ({ id }) => {
-      const result = await client.call("app.start", [id]);
+      const result = await awaitJobResult(client, await client.call("app.start", [id]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -469,7 +470,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.string().describe("App ID (name) of the app to stop"),
     },
     async ({ id }) => {
-      const result = await client.call("app.stop", [id]);
+      const result = await awaitJobResult(client, await client.call("app.stop", [id]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -481,7 +482,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       id: z.string().describe("App ID (name) of the app to redeploy"),
     },
     async ({ id }) => {
-      const result = await client.call("app.redeploy", [id]);
+      const result = describeAsyncJob(await client.call("app.redeploy", [id]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -496,7 +497,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     async ({ id, app_version }) => {
       const body: Record<string, unknown> = {};
       if (app_version !== undefined) body.app_version = app_version;
-      const result = await client.call("app.upgrade", [id, body]);
+      const result = describeAsyncJob(await client.call("app.upgrade", [id, body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -515,7 +516,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "App rollback aborted: 'confirm' must be set to true." }],
         };
       }
-      const result = await client.call("app.rollback", [id, { app_version }]);
+      const result = describeAsyncJob(await client.call("app.rollback", [id, { app_version }]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -557,7 +558,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       app_name: z.string().describe("Name of the app to pull images for"),
     },
     async ({ app_name }) => {
-      const result = await client.call("app.pull_images", [app_name]);
+      const result = describeAsyncJob(await client.call("app.pull_images", [app_name]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -597,7 +598,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       if (params.pool !== undefined) body.pool = params.pool;
       if (params.enable_image_updates !== undefined) body.enable_image_updates = params.enable_image_updates;
       if (params.address_pools !== undefined) body.address_pools = params.address_pools;
-      const result = await client.call("docker.update", [body]);
+      const result = describeAsyncJob(await client.call("docker.update", [body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
