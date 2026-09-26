@@ -72,6 +72,44 @@ TrueNAS call.
   CI, by re-deriving them from `ci.yml`. Mutation-verified: relaxing the audit
   threshold to `critical` trips two assertions.
 
+### Fixed after independent review
+
+- **`maxFragments: 0` pinned on the WebSocket client.** ws 8.21 introduced a
+  *new client-side* `maxFragments` default of **16,384** — `maxPayload` bounds
+  total size, this bounds how many frames one message may arrive in, and we
+  never opted into it. Measured across both versions: 16,384 fragments pass on
+  8.20.0 and 8.21.3; **16,385 passes on 8.20.0 and throws
+  `WS_ERR_TOO_MANY_BUFFERED_PARTS` on 8.21.3**. A 9.4 MB unfragmented message
+  is unaffected either way.
+
+  TrueNAS would have to split one response into >16,384 frames to hit it, which
+  was not observed — but the failure mode is the worst kind to diagnose: a
+  socket error trips `failAllPending`, tears the connection, and surfaces as
+  *intermittent failures across every action category*, looking like a network
+  or TrueNAS fault rather than a dependency default. Cheap insurance.
+
+- **The CI gate now asserts the audit step carries no `continue-on-error`.**
+  The step's own comment predicted that bypass while nothing checked for it —
+  gating the command text and leaving the neutering flag unguarded gates the
+  wrong half.
+
+### Scope of the dependency change, stated plainly
+
+The PR table names two bumps; the lockfile carries **66 version changes, 61
+removals, 3 additions**. Most are transitive under `@modelcontextprotocol/sdk`
+(itself unchanged) in the express/hono HTTP transport stack, which this server
+never imports — `mcp-adapter.ts` takes only `StdioServerTransport`, verified by
+grep. But two are worth naming because they change the **shipped artifact**:
+**`@yao-pkg/pkg` 6.15.0 → 6.22.0** and **`@yao-pkg/pkg-fetch` 3.5.33 → 3.6.5**,
+and pkg-fetch supplies the **Node runtime embedded in the released standalone
+binary**. ⚠ `npm run build:binary` was not exercised in review; the effect on
+that artifact is inferred from the lockfile, not built.
+
+⚠ Note the blocking audit is `--omit=dev`, which deliberately excludes the
+toolchain that *builds* what ships — `esbuild` produces the Docker entrypoint
+bundle and pkg-fetch the embedded runtime. That is not an argument for gating
+on devDependencies; it is a limitation worth stating rather than discovering.
+
 ### Documented
 
 - **`CLAUDE.md` no longer asserts a vulnerability count.** It claimed "0

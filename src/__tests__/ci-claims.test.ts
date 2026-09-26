@@ -55,6 +55,22 @@ describe("Documented CI behaviour matches ci.yml", () => {
     expect(ci).toMatch(/schedule:\s*\n\s*(#[^\n]*\n\s*)*- cron:/);
   });
 
+
+  it("the audit step is not neutered with continue-on-error", () => {
+    // The step's own comment predicts this bypass. Asserting the command text
+    // while leaving `continue-on-error: true` unguarded gates the wrong half:
+    // the job would still run, still report, and never block anything.
+    expect(ci).not.toMatch(/continue-on-error:\s*true/);
+  });
+
+  it("the ws transport pins maxFragments, so an 8.21 default cannot bite silently", () => {
+    // ws 8.21 added a client-side maxFragments default of 16,384. Exceeding it
+    // throws at the socket, which trips failAllPending and tears the
+    // connection — surfacing as intermittent failures across every action
+    // category, the hardest signature to attribute correctly.
+    expect(read("src/client.ts")).toMatch(/maxFragments:\s*0/);
+  });
+
   it("CLAUDE.md no longer asserts a vulnerability count of its own", () => {
     // The count belongs to the job, which re-derives it. A number here is a
     // recorded fact with nothing checking it — it was wrong by 16 last time.
