@@ -302,7 +302,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "dataset_get",
-    "Get dataset details by name (e.g. 'tank/data'). Falls back to the ZFS namespace for datasets the pool.dataset API does not surface (e.g. the apps/Docker root). Use 'fields' to avoid very large responses.",
+    "Get dataset details by name (e.g. 'tank/data'). Use 'fields' or 'include_children' to avoid very large responses on a parent with many children.",
     {
       id: z.string().describe("Dataset name/path (e.g. 'tank/data')"),
       fields: z
@@ -321,36 +321,22 @@ export function register(server: McpServer, client: TrueNASClient): void {
         ),
     },
     async ({ id, fields, include_children }) => {
-      let result: Record<string, unknown>;
-      try {
-        result = (await client.call("pool.dataset.get_instance", [id])) as Record<string, unknown>;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        // ⚠ ENOENT from pool.dataset does NOT mean the dataset is absent — the
-        // namespace omits internal datasets entirely. Measured on
-        // 26.0.0-BETA.1 (2026-09-24): `data-pool/ix-apps` and its 12 children,
-        // including the Docker root holding ~998 GB, return ENOENT here while
-        // `zfs.resource.query` returns them in full. Reporting "does not exist"
-        // for the busiest dataset on the box is the emptiness-is-not-health
-        // failure, so probe the lower-level namespace before believing it.
-        if (!/ENOENT|does not exist|MatchNotFound/i.test(message)) throw err;
-        const zfs = await lookupZfsResource(client, id);
-        if (!zfs) throw err;
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              source: "zfs.resource.query",
-              note:
-                `'${id}' is not surfaced by the pool.dataset API (it returned ENOENT), but it DOES ` +
-                "exist — these are its ZFS properties. Internal datasets such as the apps/Docker " +
-                "root are omitted from the dataset namespace; this is upstream TrueNAS behaviour, " +
-                "not a gap in this server. Use dataset_zfs_query to enumerate such a subtree.",
-              resource: zfs,
-            }, null, 2),
-          }],
-        };
-      }
+      // ⚠ Deliberately NO fallback to the ZFS namespace on ENOENT.
+      //
+      // Internal datasets (the apps/Docker root and its children) are omitted
+      // from `pool.dataset.query` by TrueNAS itself, and they stay omitted
+      // here: hidden by default is the operator's stated preference, and
+      // `dataset_zfs_query` is the explicit way to ask for them by name.
+      //
+      // ⚠ There is a second reason not to soften this, which is easy to lose:
+      // **ENOENT from this action is a cross-repo contract.** sr-charm's
+      // dataset-conversion plan uses `dataset_get` ENOENT as one of three
+      // independent absence proofs when verifying `pool.dataset.delete` —
+      // specifically below ~1 GB, where pool-space deltas are pure noise. If
+      // this ever returned a record for something the dataset namespace says
+      // is gone, charm would report a destroyed dataset as still present and
+      // the operator would conclude a destroy had failed.
+      const result = (await client.call("pool.dataset.get_instance", [id])) as Record<string, unknown>;
       return {
         content: [{ type: "text", text: JSON.stringify(shapeDataset(result, fields, include_children), null, 2) }],
       };
@@ -395,8 +381,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
       compression: z.string().optional().describe("Compression algorithm (e.g. LZ4, GZIP, ZLE, ZSTD, OFF)"),
       atime: z.enum(["ON", "OFF"]).optional().describe("Access time tracking"),
       dedup: z.enum(["ON", "OFF", "VERIFY"]).optional().describe("Deduplication"),
-      quota: z.number().optional().describe("Quota in bytes (0 to remove)"),
-      refquota: z.number().optional().describe("Reference quota in bytes"),
+      quota: z.number().optional().describe("Total space limit in bytes, INCLUDING snapshots and child datasets — this is the one that bounds what the dataset can consume from the pool (0 to remove)."),
+      refquota: z.number().optional().describe("Limit in bytes on REFERENCED data only — it does NOT count snapshots or child datasets, so it does not bound what this dataset can consume from the pool. Use quota for that. ⚠ On a busy dataset a refquota can also return ENOSPC to the application while the pool still has free space."),
       reservation: z.number().optional().describe("Reservation in bytes"),
       refreservation: z.number().optional().describe("Reference reservation in bytes"),
       copies: z.number().optional().describe("Number of data copies (1-3)"),
@@ -464,8 +450,8 @@ export function register(server: McpServer, client: TrueNASClient): void {
       compression: z.string().optional().describe("Compression algorithm"),
       atime: z.enum(["ON", "OFF"]).optional().describe("Access time tracking"),
       dedup: z.enum(["ON", "OFF", "VERIFY"]).optional().describe("Deduplication"),
-      quota: z.number().optional().describe("Quota in bytes (0 to remove)"),
-      refquota: z.number().optional().describe("Reference quota in bytes"),
+      quota: z.number().optional().describe("Total space limit in bytes, INCLUDING snapshots and child datasets — this is the one that bounds what the dataset can consume from the pool (0 to remove)."),
+      refquota: z.number().optional().describe("Limit in bytes on REFERENCED data only — it does NOT count snapshots or child datasets, so it does not bound what this dataset can consume from the pool. Use quota for that. ⚠ On a busy dataset a refquota can also return ENOSPC to the application while the pool still has free space."),
       reservation: z.number().optional().describe("Reservation in bytes"),
       refreservation: z.number().optional().describe("Reference reservation in bytes"),
       copies: z.number().optional().describe("Number of data copies (1-3)"),
@@ -931,27 +917,6 @@ async function describeSnapshotTaskRunBug(
   );
 
   return lines.join("\n");
-}
-
-/**
- * Look a path up in the ZFS namespace, which sees internal datasets the
- * pool.dataset namespace omits. Returns undefined when genuinely absent, so a
- * real ENOENT still surfaces as one.
- */
-async function lookupZfsResource(
-  client: TrueNASClient,
-  id: string,
-): Promise<unknown | undefined> {
-  try {
-    const rows = (await client.call("zfs.resource.query", [{
-      paths: [id],
-      get_children: false,
-      properties: ["used", "usedbydataset", "usedbychildren", "usedbysnapshots", "available", "referenced", "mountpoint"],
-    }])) as unknown[];
-    return Array.isArray(rows) && rows.length > 0 ? rows[0] : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 /**

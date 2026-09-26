@@ -47,21 +47,36 @@ Evidence is stated per item, because these were not equally well-founded:
 
 ### Fixed
 
-- **`dataset_get` no longer reports "does not exist" for datasets that do.**
-  **Measured:** `pool.dataset.query` omits `data-pool/ix-apps` and its twelve
-  children entirely — including the Docker root for every container on the host,
-  holding ~998 GB — while `zfs.resource.query` returns them in full. An explicit
-  `[["id","=",…]]` predicate returns `[]` and `get_instance` returns `[ENOENT]`.
-  This is **upstream TrueNAS behaviour, not a gap in this server**: the omission
-  was confirmed by going under the MCP straight to middleware, after first
-  checking that this server does no filtering of its own. A dot-prefix rule is
-  ruled out — `.ix-virt` *is* listed.
+- **`quota` vs `refquota` descriptions corrected.** Both said only "quota in
+  bytes". `refquota` bounds **referenced data only** — it does not count
+  snapshots or child datasets, so it does **not** bound what a dataset can take
+  from the pool, and on a busy dataset it can return ENOSPC to the application
+  while the pool still has free space. A reader reaching for a usage cap would
+  have picked the wrong one; the descriptions now say which is which.
 
-  ENOENT now triggers a ZFS-namespace lookup, and a hit returns the real
-  properties with a note explaining why the dataset namespace hid it. A dataset
-  that is genuinely absent still reports ENOENT, and non-ENOENT errors are not
-  swallowed — a fallback that tries harder until something answers is a fallback
-  that can never report absence.
+- **Hidden datasets are reachable, but only when you ask.** **Measured:**
+  `pool.dataset.query` omits `data-pool/ix-apps` and its twelve children
+  entirely — including the Docker root for every container on the host, holding
+  ~998 GB — while `zfs.resource.query` returns them in full. An explicit
+  `[["id","=",…]]` predicate returns `[]` and `get_instance` returns `[ENOENT]`.
+  This is **upstream TrueNAS behaviour, not a gap in this server**: confirmed by
+  first checking that this server does no filtering of its own, then going under
+  the MCP straight to middleware. A dot-prefix rule is ruled out — `.ix-virt`
+  *is* listed.
+
+  ⚠ **`dataset_get` behaviour is deliberately UNCHANGED.** An earlier revision
+  of this branch made it fall back to the ZFS namespace on ENOENT. That was
+  re-scoped on review, for two reasons:
+
+  1. Hidden-by-default is the operator's stated preference — internal datasets
+     should not appear in ordinary enumeration.
+  2. **ENOENT from `dataset_get` is a cross-repo contract.** sr-charm's
+     dataset-conversion plan uses it as one of *three* independent absence
+     proofs when verifying `pool.dataset.delete`, specifically below ~1 GB where
+     pool-space deltas are noise. Softening it would make charm report a
+     destroyed dataset as still present, and an operator would conclude a
+     destroy had failed. The new `dataset_zfs_query` removes that coupling
+     entirely rather than documenting around it.
 
 - **Parameter errors name the key that was rejected, not just the one missing.**
   `dataset_get {"dataset": …}` reported only `id: expected string, received

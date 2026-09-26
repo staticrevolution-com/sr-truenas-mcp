@@ -1,4 +1,9 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const TOOLS = resolve(dirname(fileURLToPath(import.meta.url)), "../tools");
 import type { TrueNASClient } from "../client.js";
 import { buildRegistry } from "../tools/index.js";
 import { ACTION_TIERS, SafetyTier } from "../safety.js";
@@ -193,53 +198,57 @@ describe("filesystem_disk_usage budgets per child, not globally", () => {
 // including the Docker root; zfs.resource.query returns them in full.
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("dataset_get falls back to the ZFS namespace on ENOENT", () => {
+describe("dataset_get keeps hidden datasets hidden, and ENOENT means absent", () => {
   function client(impl: (m: string, p: unknown[]) => unknown): TrueNASClient {
     return { call: async (m: string, p: unknown[] = []) => impl(m, p) } as unknown as TrueNASClient;
   }
 
-  it("returns the ZFS record instead of a misleading 'does not exist'", async () => {
+  it("does NOT fall back to the ZFS namespace for a hidden dataset", () => {
+    // Internal datasets (the apps/Docker root and its 12 children) are omitted
+    // from pool.dataset.query by TrueNAS itself. They stay omitted here:
+    // hidden-by-default is the operator's stated preference, and
+    // dataset_zfs_query is the explicit way to ask for them by name.
+    const source = readFileSync(resolve(TOOLS, "storage.ts"), "utf8");
+    const getBody = source.slice(source.indexOf('"dataset_get"'), source.indexOf('"dataset_zfs_query"'));
+    expect(getBody).not.toMatch(/zfs\.resource\.query/);
+  });
+
+  it("⚠ CHARM CONTRACT: ENOENT propagates unchanged — it is an absence proof", async () => {
+    // This is not a defensive nicety. sr-charm's dataset-conversion plan uses
+    // `dataset_get` ENOENT as ONE OF THREE independent absence proofs when
+    // verifying `pool.dataset.delete`, specifically below ~1 GB where
+    // pool-space deltas are pure noise (internal/dsconvert/plan.go).
+    //
+    // If this action ever answered with a record for something the dataset
+    // namespace reports as gone, charm would report a DESTROYED dataset as
+    // still present, and the operator would conclude a destroy had failed and
+    // act on that. Anything that softens ENOENT here breaks a destructive
+    // verification in another repository.
     const reg = buildRegistry(
       client((method) => {
         if (method === "pool.dataset.get_instance") {
-          throw new Error("TrueNAS API error: [ENOENT] None: PoolDataset data-pool/ix-apps does not exist");
+          throw new Error("TrueNAS API error: [ENOENT] None: PoolDataset gone does not exist");
         }
-        if (method === "zfs.resource.query") {
-          return [{ name: "data-pool/ix-apps", properties: { used: { value: 998_600_000_000 } } }];
-        }
-        throw new Error(`unexpected ${method}`);
+        throw new Error(`must not consult ${method} — ENOENT is the answer`);
       }),
     );
-    const parsed = JSON.parse(contentText(await reg.execute("storage", "dataset_get", { id: "data-pool/ix-apps" })));
-    expect(parsed.source).toBe("zfs.resource.query");
-    expect(parsed.resource.properties.used.value).toBe(998_600_000_000);
-    expect(parsed.note).toMatch(/does exist/i);
-    expect(parsed.note).toMatch(/upstream TrueNAS behaviour/);
+    await expect(reg.execute("storage", "dataset_get", { id: "gone" })).rejects.toThrow(/ENOENT/);
   });
 
-  it("still reports ENOENT when the dataset is genuinely absent", async () => {
-    // Without this the fallback would mask real errors — the failure mode of
-    // "try harder until something answers" is that nothing ever reports absence.
+  it("dataset_zfs_query is the explicit, opt-in route to hidden datasets", async () => {
+    let seen: unknown;
     const reg = buildRegistry(
-      client((method) => {
-        if (method === "pool.dataset.get_instance") {
-          throw new Error("TrueNAS API error: [ENOENT] None: PoolDataset nope does not exist");
-        }
-        if (method === "zfs.resource.query") return [];
-        throw new Error(`unexpected ${method}`);
+      client((method, params) => {
+        expect(method).toBe("zfs.resource.query");
+        seen = (params as unknown[])[0];
+        return [{ name: "data-pool/ix-apps", properties: { used: { value: 998_600_000_000 } } }];
       }),
     );
-    await expect(reg.execute("storage", "dataset_get", { id: "nope" })).rejects.toThrow(/ENOENT/);
-  });
-
-  it("does not swallow non-ENOENT errors", async () => {
-    const reg = buildRegistry(
-      client((method) => {
-        if (method === "pool.dataset.get_instance") throw new Error("TrueNAS API error: [EACCES] denied");
-        throw new Error(`unexpected ${method}`);
-      }),
+    const parsed = JSON.parse(
+      contentText(await reg.execute("storage", "dataset_zfs_query", { paths: ["data-pool/ix-apps"] })),
     );
-    await expect(reg.execute("storage", "dataset_get", { id: "x" })).rejects.toThrow(/EACCES/);
+    expect(parsed[0].properties.used.value).toBe(998_600_000_000);
+    expect((seen as { paths: string[] }).paths).toEqual(["data-pool/ix-apps"]);
   });
 
   it("dataset_zfs_query is registered open-tier and validates its paths", async () => {
