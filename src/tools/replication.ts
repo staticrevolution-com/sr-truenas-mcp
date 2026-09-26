@@ -473,7 +473,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "cronjob_run",
     "Run a cron job immediately",
     { id: z.number().describe("Cron job ID") },
-    async ({ id }) => jsonContent(await client.call("cronjob.run", [id])),
+    async ({ id }) => jsonContent(describeAsyncJob(await client.call("cronjob.run", [id]))),
   );
 
   // =========================================================================
@@ -554,7 +554,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "rsync_task_run",
     "Run an rsync task immediately",
     { id: z.number().describe("Rsync task ID") },
-    async ({ id }) => jsonContent(await client.call("rsynctask.run", [id])),
+    async ({ id }) => jsonContent(describeAsyncJob(await client.call("rsynctask.run", [id]))),
   );
 
   // =========================================================================

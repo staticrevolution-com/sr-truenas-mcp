@@ -207,7 +207,7 @@ Update: publish a new tagged release (CI builds the binary tarball + GHCR image)
 - `filesystem_put` **creates missing parent directories** — `filesystem.put` calls `os.makedirs()` upstream, so a typo in a path silently produces a new directory tree rather than an error. Combined with the absence of any file-delete method (above), a mistyped path is not cleanly undoable: the unit of cleanup is the dataset.
 - `filesystem_put`'s post-write `stat` confirms that something landed at the path. It does **not** detect a write beneath an **unmounted** dataset — the bytes go to the underlying filesystem at the same path, `stat` succeeds, and the file vanishes when the dataset mounts. Catching that needs a `mount_id` comparison against the dataset; not implemented.
 - `snapshot_task_run` cannot work on TrueNAS 26.0 — an upstream middleware bug. The action returns a diagnosis rather than a bare `[EINVAL]`; see the 2026-09-13 field report.
-- `npm audit` reports 0 vulnerabilities as of B6 (transitive `hono`/`postcss` bumps via `npm audit fix`; lockfile only).
+- Dependency advisories are **checked by CI, not asserted here** — `.github/workflows/ci.yml` runs `npm audit --omit=dev --audit-level=high` as a blocking job and reports the full tree as an advisory summary. A count in this file would be a recorded fact with nothing checking it; the job is the check. (This line previously claimed "0 vulnerabilities" and was, by 2026-09-25, wrong by 16 including 2 critical — see CHANGELOG 1.3.1.)
 
 
 ---

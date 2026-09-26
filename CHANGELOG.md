@@ -5,6 +5,97 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+⚠ **Version deliberately unassigned.** Three PRs are in flight off `master`,
+each of which would otherwise claim a number and conflict. This is
+behaviour-changing across 36 actions and warrants a **minor**; assign it when
+cutting the release.
+
+### Fixed
+
+- **36 actions reported an enqueue as an outcome.** A `@job` middleware method
+  returns a job id — a bare integer — not a result. Handlers that returned it
+  unchanged meant a **FAILED operation read as success**: `dataset_unlock` with
+  a wrong passphrase, `certificate_create`, `tunable_create`, `app_delete` and
+  32 more all answered with a number that looked like an id and meant nothing
+  about whether the work succeeded.
+
+  This defect was found and fixed for the filesystem handlers in **v1.1.1**. The
+  wider sweep was recorded as a deferred follow-up in the 2026-06-12 field
+  report and never run. Running it found 36 more call sites — 49 job calls
+  exist in `src/tools/`, 10 were already correct, and 3 sit inside Tier-0
+  blocked actions that are never registered.
+
+  **The worst was not a destructive action but a read.**
+  `dataset_encryption_summary` is a job whose *result is the answer*, so it
+  returned an integer where a summary belonged. Verified live before and after:
+  it now returns the real `{name, valid_key, locked, unlock_error, …}` record.
+
+  Classification, and why it is not uniform:
+  - **18 → `awaitJobResult`** — bounded work where the outcome is the point
+    (`dataset_lock`/`unlock`/`encryption_summary`, `service_start`/`stop`/
+    `restart`, the `tunable_*` and `certificate_*` pairs, `mail_send`,
+    `vm_restart`, `app_start`/`stop`/`delete`,
+    `directory_services_update`/`leave`).
+  - **18 → `describeAsyncJob`** — genuinely long work (`pool_create`/`export`/
+    `replace_disk`/`update`, `boot_scrub`/`attach_disk`, `update_download`,
+    `cronjob_run`, `rsync_task_run`, the five image-pulling `app_*` actions,
+    `directory_services_cache_refresh`, plus the two below).
+
+  ⚠ **`docker_config_update` and `vm_stop` were reclassified from await to
+  handle during review, on measurements this repo did not have.**
+  `docker.update` re-initialises the apps pool and restarts the Docker daemon —
+  against a store measured at **998.1 GB with 122 containers and 48,544
+  overlay2 directories**, where anything that walks the tree is slow enough that
+  `/system/df` times out. 300 s is not a safe bound there, and the false-failure
+  case is the worst available: an operator reads "failed" on a pool migration
+  that is still running, and retries it. `vm.stop` with `force: false` waits on
+  **ACPI guest shutdown, which has no upper bound** — a hung guest never
+  completes. Returning a handle for a long job is never wrong; awaiting one is
+  wrong exactly when it matters most.
+
+  ⚠ **Ambiguous cases default to `describeAsyncJob`, because the failure modes
+  are asymmetric.** `awaitJobResult` uses `waitForJob`'s 300 s default, which
+  does not merely block — it then **throws a false failure for a job that is
+  still running and will very likely succeed**. On a `pool_update` topology
+  change that is about the worst place to manufacture an error report.
+  Mis-classifying fast work as async only costs verbosity. `pool_update` and
+  `directory_services_cache_refresh` were moved to async on exactly that
+  reasoning.
+
+### Added
+
+- **`src/job-methods.ts`** — the 101 `@job` methods published by TrueNAS
+  26.0.0-BETA.1, captured from `core.get_methods`. This is the one fact here
+  that cannot be re-derived offline, since job-ness belongs to the running
+  middleware. Flagged in the file as decay-prone and due for re-capture against
+  a new TrueNAS major.
+
+- **`src/__tests__/job-wrapping.test.ts`** — gates the half that *is*
+  derivable: every call to a method in that set must be wrapped. It also
+  asserts `awaitJobResult` is always awaited and `describeAsyncJob` never is,
+  derives the Tier-0 exclusion from `safety.ts` rather than hardcoding three
+  names, and carries a positive control on its own scanner so a broken regex
+  cannot make it pass vacuously. Mutation-verified against both failure modes.
+
+### Known limitation
+
+`describeAsyncJob` hands back a `job_id`, and **no registered action can poll
+it** — nothing exposes `core.get_jobs`. That is unchanged by this release and
+is still an improvement over a bare integer, but the handle is not yet usable
+from this server.
+
+A `job_get`/`job_list` action was designed and **deliberately not shipped**. A
+job record embeds the calling credential, the *arguments* of the original call,
+and free-text `error` / `exc_info` / `progress.description` fields in which
+middlewared routinely includes the `repr()` of those arguments. The response
+filter is a key-based denylist and cannot see a secret inside a string, so a
+pass-through action would leak. `core.get_jobs` is also cross-principal — every
+credential's jobs, not the caller's. Adding it safely means a field allowlist
+projected in the handler, gated by a test asserting the projection is closed.
+Recorded rather than quietly attempted.
+
 ## [1.4.0] — 2026-09-24
 
 Five findings raised from an ep11 outage investigation (apps pool hit zero
@@ -146,6 +237,119 @@ while correctly truncating `overlay2`, `image` and `volumes`.
 That is **indicated, not measured** — entry counts are not sizes, and the bytes
 are not attributed between `overlay2` and `volumes`. A layer-to-image
 reconciliation would confirm it.
+
+## [1.3.1] — 2026-09-25
+
+Dependency security. No action-surface change; no behaviour change to any
+TrueNAS call.
+
+### Fixed
+
+- **Renovate had opened zero PRs on this repository, ever.** `renovate.json`
+  extended `github>staticrevolution-com/renovate-config`, which is **private**
+  while this repository is **public** — the hosted Renovate app will not read a
+  private preset for a public consumer, so it halted "as a precaution" on
+  2026-08-21 and stayed silent (issue #14).
+
+  ⚠ It fails toward the reassuring answer: **no PRs looks exactly like nothing
+  to update.** Five weeks later the tree carried 16 advisories.
+
+  The decisive control: the *identical* preset string resolves fine in the
+  org's private repos, which received Renovate PRs on 2026-09-15 and
+  2026-09-23 — after the failure here. Repository visibility is the only
+  variable that differs. Granting the app access to the preset repo is
+  therefore not the fix; it already has it.
+
+  The preset is now **inlined**, scoped to npm and GitHub Actions. That is
+  smaller *and* more correct than what it replaces: the shared preset is
+  overwhelmingly Docker-datasource rules and this repository has no compose
+  files. Publishing the preset instead was rejected — its descriptions name
+  internal services and incident documents.
+
+- **16 advisories → 2.** Both criticals and all seven highs cleared by
+  `npm audit fix` (no `--force`, no code change):
+  - **`ws` 8.20.0 → 8.21.3** — the WebSocket transport under *every* TrueNAS
+    call. The blocking advisory is the memory-exhaustion DoS
+    (`GHSA-96hv-2xvq-fx4p`, fixed 8.21.0), not the uninitialized-memory
+    disclosure, which is moderate and was already fixed in 8.20.1. A minor
+    bump inside the existing `^8.18.0` range; `src/client.ts` uses only stable
+    8.x API and the suite passes unchanged.
+  - **`vitest` 3.2.4 → 3.2.7** — clears the critical UI-server file read.
+
+  The two remaining advisories are one dev-only moderate requiring a vitest
+  major. Left deliberately: a major bump of the test runner to clear a
+  build-host advisory is a worse trade than the advisory.
+
+### Added
+
+- **A dependency-audit job in CI, which is the actual fix.** Blocking on
+  `npm audit --omit=dev --audit-level=high` — the runtime tree, i.e. what
+  ships in the npm package and the GHCR image — plus a non-blocking full-tree
+  report in the run summary.
+
+  Scoped to the runtime tree on purpose: gating on devDependency advisories
+  fails the build for a test-runner CVE that cannot reach production, and a
+  gate that cries wolf is one somebody adds `continue-on-error` to.
+
+  ⚠ If a genuinely unreachable advisory ever blocks a release, **do not relax
+  the level to `critical`** — that silently drops the whole `high` class,
+  including the `ws` advisory this job exists for. Add a dated `overrides`
+  entry so the exception stays visible. There is a test asserting this.
+
+- **A weekly schedule on CI.** A push-triggered audit cannot see an advisory
+  published against unchanged code, which is how most of this risk arrives.
+
+- **`npm run type-check` in CI.** It was never there despite being documented.
+
+- **`src/__tests__/ci-claims.test.ts`** — gates the claims the docs make about
+  CI, by re-deriving them from `ci.yml`. Mutation-verified: relaxing the audit
+  threshold to `critical` trips two assertions.
+
+### Fixed after independent review
+
+- **`maxFragments: 0` pinned on the WebSocket client.** ws 8.21 introduced a
+  *new client-side* `maxFragments` default of **16,384** — `maxPayload` bounds
+  total size, this bounds how many frames one message may arrive in, and we
+  never opted into it. Measured across both versions: 16,384 fragments pass on
+  8.20.0 and 8.21.3; **16,385 passes on 8.20.0 and throws
+  `WS_ERR_TOO_MANY_BUFFERED_PARTS` on 8.21.3**. A 9.4 MB unfragmented message
+  is unaffected either way.
+
+  TrueNAS would have to split one response into >16,384 frames to hit it, which
+  was not observed — but the failure mode is the worst kind to diagnose: a
+  socket error trips `failAllPending`, tears the connection, and surfaces as
+  *intermittent failures across every action category*, looking like a network
+  or TrueNAS fault rather than a dependency default. Cheap insurance.
+
+- **The CI gate now asserts the audit step carries no `continue-on-error`.**
+  The step's own comment predicted that bypass while nothing checked for it —
+  gating the command text and leaving the neutering flag unguarded gates the
+  wrong half.
+
+### Scope of the dependency change, stated plainly
+
+The PR table names two bumps; the lockfile carries **66 version changes, 61
+removals, 3 additions**. Most are transitive under `@modelcontextprotocol/sdk`
+(itself unchanged) in the express/hono HTTP transport stack, which this server
+never imports — `mcp-adapter.ts` takes only `StdioServerTransport`, verified by
+grep. But two are worth naming because they change the **shipped artifact**:
+**`@yao-pkg/pkg` 6.15.0 → 6.22.0** and **`@yao-pkg/pkg-fetch` 3.5.33 → 3.6.5**,
+and pkg-fetch supplies the **Node runtime embedded in the released standalone
+binary**. ⚠ `npm run build:binary` was not exercised in review; the effect on
+that artifact is inferred from the lockfile, not built.
+
+⚠ Note the blocking audit is `--omit=dev`, which deliberately excludes the
+toolchain that *builds* what ships — `esbuild` produces the Docker entrypoint
+bundle and pkg-fetch the embedded runtime. That is not an argument for gating
+on devDependencies; it is a limitation worth stating rather than discovering.
+
+### Documented
+
+- **`CLAUDE.md` no longer asserts a vulnerability count.** It claimed "0
+  vulnerabilities" and was wrong by 16, including 2 critical, for an unknown
+  period. It now points at the CI job, which re-derives the number. A count in
+  prose is a recorded fact with nothing checking it — the whole failure this
+  release is about.
 
 ## [1.3.0] — 2026-09-13
 

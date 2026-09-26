@@ -139,7 +139,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       const body: Record<string, unknown> = { name, topology };
       if (encryption !== undefined) body.encryption = encryption;
       if (encryption_options !== undefined) body.encryption_options = encryption_options;
-      const result = await client.call("pool.create", [body]);
+      const result = describeAsyncJob(await client.call("pool.create", [body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -183,7 +183,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       const body: Record<string, unknown> = {};
       if (autotrim !== undefined) body.autotrim = autotrim;
       if (topology !== undefined) body.topology = topology;
-      const result = await client.call("pool.update", [id, body]);
+      const result = describeAsyncJob(await client.call("pool.update", [id, body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -228,7 +228,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
           content: [{ type: "text", text: "Operation not confirmed. Set confirm to true to proceed." }],
         };
       }
-      const result = await client.call("pool.export", [id, { cascade, destroy }]);
+      const result = describeAsyncJob(await client.call("pool.export", [id, { cascade, destroy }]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -273,7 +273,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       const body: Record<string, unknown> = { label, disk };
       if (force !== undefined) body.force = force;
       if (preserve_settings !== undefined) body.preserve_settings = preserve_settings;
-      const result = await client.call("pool.replace", [id, body]);
+      const result = describeAsyncJob(await client.call("pool.replace", [id, body]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -581,7 +581,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Get encryption summary for a dataset and its children",
     { id: z.string().describe("Dataset name/path") },
     async ({ id }) => {
-      const result = await client.call("pool.dataset.encryption_summary", [id]);
+      const result = await awaitJobResult(client, await client.call("pool.dataset.encryption_summary", [id]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -591,7 +591,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
     "Lock an encrypted dataset",
     { id: z.string().describe("Dataset name/path") },
     async ({ id }) => {
-      const result = await client.call("pool.dataset.lock", [id]);
+      const result = await awaitJobResult(client, await client.call("pool.dataset.lock", [id]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -621,7 +621,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
         .describe("Unlock options"),
     },
     async ({ id, unlock_options }) => {
-      const result = await client.call("pool.dataset.unlock", [id, unlock_options ?? {}]);
+      const result = await awaitJobResult(client, await client.call("pool.dataset.unlock", [id, unlock_options ?? {}]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );

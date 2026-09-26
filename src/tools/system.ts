@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { TrueNASClient } from "../client.js";
 import { BUILD_VERSION } from "../version.js";
+import { awaitJobResult } from "../job-utils.js";
 
 export function register(server: McpServer, client: TrueNASClient): void {
   // ---------------------------------------------------------------------------
@@ -281,7 +282,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       service: z.string().describe("Name of the service to start, e.g. 'ssh', 'smb', 'nfs'"),
     },
     async ({ service }) => {
-      const result = await client.call("service.control", ["START", service]);
+      const result = await awaitJobResult(client, await client.call("service.control", ["START", service]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -293,7 +294,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       service: z.string().describe("Name of the service to stop"),
     },
     async ({ service }) => {
-      const result = await client.call("service.control", ["STOP", service]);
+      const result = await awaitJobResult(client, await client.call("service.control", ["STOP", service]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -305,7 +306,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       service: z.string().describe("Name of the service to restart"),
     },
     async ({ service }) => {
-      const result = await client.call("service.control", ["RESTART", service]);
+      const result = await awaitJobResult(client, await client.call("service.control", ["RESTART", service]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
@@ -399,7 +400,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       to: z.array(z.string()).describe("Array of recipient email addresses"),
     },
     async ({ subject, text, to }) => {
-      const result = await client.call("mail.send", [{ subject, text, to }]);
+      const result = await awaitJobResult(client, await client.call("mail.send", [{ subject, text, to }]));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );
