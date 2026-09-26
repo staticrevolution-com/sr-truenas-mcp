@@ -231,6 +231,7 @@ export const ACTION_TIERS: Record<string, SafetyTier> = {
   snapshot_clone: SafetyTier.Open,
   snapshot_task_list: SafetyTier.Open,
   snapshot_task_create: SafetyTier.Open,
+  snapshot_task_update: SafetyTier.Confirm,
   snapshot_task_delete: SafetyTier.Confirm,
   snapshot_task_run: SafetyTier.Confirm,
   rsync_task_list: SafetyTier.Open,

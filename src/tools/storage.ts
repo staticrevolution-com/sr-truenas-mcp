@@ -345,7 +345,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "dataset_zfs_query",
-    "Query ZFS resources directly, including datasets the pool.dataset API hides (e.g. the apps/Docker root). Returns authoritative on-disk space accounting — used, usedbydataset, usedbychildren, usedbysnapshots, available. Prefer this for 'where did the space go' questions.",
+    "Query ZFS resources directly, including datasets the pool.dataset API hides (e.g. the apps/Docker root). Returns authoritative on-disk space accounting. Prefer this for 'where did the space go' questions. ⚠ RESPONSE SHAPE — values are NOT top-level. Each node is {name, pool, properties:{<key>:{value, raw, source}}, children:[]}, so the figure you want is properties.used.value, NOT node.used (which is undefined — a parser reading it gets 0 for every row). And get_children:true returns a FLAT array of every matching resource with children:[] on each node, not a nested tree; iterate the array, do not recurse.",
     {
       paths: z
         .array(z.string())
@@ -795,6 +795,67 @@ export function register(server: McpServer, client: TrueNASClient): void {
         if (params[field] !== undefined) body[field] = params[field];
       }
       const result = await client.call("pool.snapshottask.create", [body]);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    "snapshot_task_update",
+    "Edit an existing periodic snapshot task in place. Send ONLY the fields you want to change — everything omitted is preserved. Use this instead of delete+create: recreating a task leaves the dataset tree with no snapshot task at all in between, changes its id, and silently drops any field you forget to re-type.",
+    {
+      confirm: z.boolean().describe("Must be true — this changes snapshot retention"),
+      id: z.number().describe("Snapshot task ID (from snapshot_task_list)"),
+      dataset: z.string().optional().describe("Dataset to snapshot"),
+      recursive: z.boolean().optional().describe("Include child datasets"),
+      exclude: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Child datasets to exclude from a recursive task. Replaces the whole list — send the full set you want, not just additions.",
+        ),
+      lifetime_value: z.number().optional().describe("Retention value. ⚠ Lowering this deletes existing snapshots that fall outside the new window."),
+      lifetime_unit: z.enum(["HOUR", "DAY", "WEEK", "MONTH", "YEAR"]).optional().describe("Retention unit"),
+      naming_schema: z.string().optional().describe("Naming schema, e.g. 'auto-%Y-%m-%d_%H-%M'. ⚠ Changing this orphans existing snapshots: retention matches by name, so snapshots under the old schema stop being pruned by this task."),
+      schedule: z
+        .object({
+          minute: z.string().optional(),
+          hour: z.string().optional(),
+          dom: z.string().optional(),
+          month: z.string().optional(),
+          dow: z.string().optional(),
+          begin: z.string().optional(),
+          end: z.string().optional(),
+        })
+        .optional()
+        .describe("Cron-style schedule"),
+      enabled: z.boolean().optional().describe("Enable or disable the task. ⚠ Disabling stops all future snapshots for this dataset tree."),
+      allow_empty: z.boolean().optional().describe("Create a snapshot even when nothing changed"),
+    },
+    async (params) => {
+      // Send ONLY what the caller supplied.
+      //
+      // `pool.snapshottask.update` is a genuine partial update — every field
+      // in its schema is optional, and the 26.0 handler does
+      // `new = old.updated(data)`, i.e. it merges the delta onto the stored
+      // record. So an omitted field is preserved, not nulled.
+      //
+      // ⚠ That is a property of the upstream method, not of this handler, and
+      // it is exactly the property Portainer's `git/redeploy` does NOT have —
+      // there, omitting `Env` wipes it. Building a full object here and
+      // filling the gaps with nulls would convert a safe partial edit into
+      // that same defect one system over, so we deliberately forward a sparse
+      // body and gate it with a test.
+      const { confirm: _c, id, ...rest } = params as Record<string, unknown> & { id: number };
+      const body: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rest)) {
+        if (v !== undefined) body[k] = v;
+      }
+      if (Object.keys(body).length === 0) {
+        throw new Error(
+          "snapshot_task_update requires at least one field to change. Sending an empty update would be a no-op that reads as a successful edit.",
+        );
+      }
+      const result = await client.call("pool.snapshottask.update", [id, body]);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
