@@ -92,15 +92,31 @@ export function register(server: McpServer, client: TrueNASClient): void {
       // iff what you wanted happened to fall inside the first 100 entries. It
       // is worse here, because the natural next step after a listing is to
       // conclude something is NOT THERE. A short answer reads as an answer.
-      const overfetch = Math.min(limit + 1, LISTDIR_MAX_LIMIT + 1);
+      // ⚠ The over-fetch must never exceed the server's own cap. An earlier
+      // revision used `Math.min(limit + 1, LISTDIR_MAX_LIMIT + 1)`, which asks
+      // for 10001 at `limit: 10000` — and middlewared rejects that outright
+      // with `[EINVAL] Options limit must be between 1 and 10000`. The action
+      // therefore failed at exactly the value its own truncation warning tells
+      // callers to use. Caught in review; the test mock had not modelled the
+      // server cap, so nothing failed.
+      const overfetch = Math.min(limit + 1, LISTDIR_MAX_LIMIT);
       const rows = (await client.call("filesystem.listdir", [
         validPath,
         query_filters ?? [],
         { limit: overfetch, offset },
       ])) as unknown[];
 
-      const truncated = Array.isArray(rows) && rows.length > limit;
-      const entries = truncated ? rows.slice(0, limit) : rows;
+      const count = Array.isArray(rows) ? rows.length : 0;
+
+      // Two distinct reasons the listing may be partial:
+      //   - we got more than the caller asked for  -> there are definitely more
+      //   - we got exactly the SERVER cap          -> we cannot prove otherwise
+      // The second is conservative by design: at `limit: 10000` the over-fetch
+      // has nowhere to go, so completeness is unprovable and we decline to
+      // claim it rather than reporting a possibly-partial listing as whole.
+      const atServerCap = count === LISTDIR_MAX_LIMIT;
+      const truncated = count > limit || atServerCap;
+      const entries = Array.isArray(rows) ? rows.slice(0, limit) : [];
 
       return {
         content: [{
@@ -109,11 +125,14 @@ export function register(server: McpServer, client: TrueNASClient): void {
             path: validPath,
             count: entries.length,
             truncated,
-            next_offset: truncated ? offset + limit : null,
+            next_offset: truncated ? offset + entries.length : null,
             ...(truncated
               ? {
                   warning:
-                    `TRUNCATED — more than ${limit} entries match. This listing is PARTIAL: ` +
+                    (atServerCap && count <= limit
+                      ? `AT THE SERVER CAP (${LISTDIR_MAX_LIMIT}) — completeness cannot be proven. `
+                      : `TRUNCATED — more than ${limit} entries match. `) +
+                    `This listing may be PARTIAL: ` +
                     `absence of a name from it does NOT mean the name is absent from the directory. ` +
                     `Re-request with offset ${offset + limit}, raise limit (max ${LISTDIR_MAX_LIMIT}), ` +
                     `or narrow with query_filters.`,

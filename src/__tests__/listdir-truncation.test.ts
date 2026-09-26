@@ -24,7 +24,19 @@ function contentText(result: unknown): string {
   return (result as { content: Array<{ text: string }> }).content[0].text;
 }
 
-/** A directory of `n` entries; records the query options it was asked for. */
+const SERVER_MAX = 10_000;
+
+/**
+ * A directory of `n` entries.
+ *
+ * ⚠ This mock ENFORCES middlewared's real `limit` bound of 1..10000, because a
+ * mock that accepts anything cannot catch an over-fetch that exceeds it. The
+ * first version of this suite did not, and consequently passed green against a
+ * handler that asked for 10001 at `limit: 10000` — which the real server
+ * rejects outright, breaking the action at exactly the value its own warning
+ * tells callers to use. A stub more permissive than the thing it stands in for
+ * does not test the boundary; it hides it.
+ */
 function dirClient(n: number, spy?: { filters?: unknown; options?: Record<string, number> }) {
   const all = Array.from({ length: n }, (_, i) => ({ name: `e${i}`, type: "FILE" }));
   return {
@@ -32,6 +44,11 @@ function dirClient(n: number, spy?: { filters?: unknown; options?: Record<string
       expect(method).toBe("filesystem.listdir");
       const [, filters, options] = params as [string, unknown, { limit: number; offset: number }];
       if (spy) { spy.filters = filters; spy.options = options; }
+      if (options.limit < 1 || options.limit > SERVER_MAX) {
+        throw new Error(
+          `TrueNAS API error: [EAGAIN] [EINVAL] query_options: Value error, Options limit must be between 1 and ${SERVER_MAX} (code 11)`,
+        );
+      }
       return all.slice(options.offset, options.offset + options.limit);
     },
   } as unknown as TrueNASClient;
@@ -150,6 +167,35 @@ describe("filesystem_listdir never hides that it truncated", () => {
       path: "/mnt/tank/x", limit: 200_000,
     });
     expect(JSON.stringify(r)).toMatch(/10000/);
+  });
+
+
+  it("⚠ works at limit === the server maximum, and never over-fetches past it", async () => {
+    // The regression. `Math.min(limit + 1, MAX + 1)` asked for 10001 here and
+    // the server rejected the whole call — at precisely the value the
+    // truncation warning recommends. The mock now enforces the real bound, so
+    // this fails loudly if the over-fetch is ever un-clamped again.
+    const spy: { options?: Record<string, number> } = {};
+    const reg = buildRegistry(dirClient(SERVER_MAX + 500, spy));
+    const r = JSON.parse(contentText(await reg.execute("filesystem", "filesystem_listdir", {
+      path: "/mnt/tank/huge", limit: SERVER_MAX,
+    })));
+    expect(spy.options?.limit).toBeLessThanOrEqual(SERVER_MAX);
+    expect(r.count).toBe(SERVER_MAX);
+    // At the cap the over-fetch has nowhere to go, so completeness is
+    // unprovable — say so rather than claiming a whole listing.
+    expect(r.truncated).toBe(true);
+    expect(r.warning).toMatch(/completeness cannot be proven/);
+  });
+
+  it("just below the cap still detects truncation the normal way", async () => {
+    const reg = buildRegistry(dirClient(SERVER_MAX + 500));
+    const r = JSON.parse(contentText(await reg.execute("filesystem", "filesystem_listdir", {
+      path: "/mnt/tank/huge", limit: SERVER_MAX - 1,
+    })));
+    expect(r.count).toBe(SERVER_MAX - 1);
+    expect(r.truncated).toBe(true);
+    expect(r.next_offset).toBe(SERVER_MAX - 1);
   });
 
   it("an empty directory is reported as empty, not as truncated", async () => {
