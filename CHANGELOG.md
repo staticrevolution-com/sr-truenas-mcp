@@ -64,13 +64,38 @@ paged via next_offset  231 rows, 231 unique, matches full listing
 negative control count=0  truncated=false   (instrument discriminates)
 ```
 
+### The danger, demonstrated
+
+On the same directory, listing the Docker volume set — 14 compose-scoped
+`gh-runners_runner-data-*` volumes among 231 entries:
+
+```
+default (100-entry) listing : 9 of 14 visible
+full listing                : 14 of 14
+INVISIBLE to the default    : homelab-1, sr-7, sr-3, homelab-2, sr-4
+order                       : NOT sorted — readdir order
+```
+
+⚠ **`filesystem_stat` on one of the invisible five returns a real DIRECTORY.**
+That is the whole defect in one line: the listing said a volume was not there,
+and it was. Five of fourteen runners were unlistable, in an arbitrary order
+that made the gap look like a complete answer.
+
 ### Note on the original report
 
-Two of the three reported symptoms reproduce: the 100-entry truncation and the
-ignored filter. **The third — "`limit: 300` was also ignored" — does not.** An
-explicit limit is honoured, then and now. Recorded because a bug report that is
-two-thirds right is still worth acting on, and the third part should not become
-folklore.
+Three of the four reported symptoms reproduce exactly — the 100-entry
+truncation, the dropped filter, and the readdir-order gap (the reporter named
+`sr-3`, `sr-4` and `sr-7` as missing from between `sr-2` and `sr-5`; all three
+are in the invisible set above).
+
+**The fourth — "`limit: 300` was also ignored" — does not reproduce.** An
+explicit limit is honoured, then and now (`limit: 300` → 231 entries). The most
+likely explanation is that the limit never reached the handler — a string
+instead of a number, or nested where the registry's `.strip()` discarded it
+silently. ⚠ **That is the same failure as the dropped filter, one parameter
+over**, which makes the mechanism general rather than filter-specific: any
+parameter an action does not declare, or declares with a different type, is
+dropped without a word. Worth knowing beyond this action.
 
 ## [1.3.0] — 2026-09-13
 
