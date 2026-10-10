@@ -63,7 +63,7 @@
     "@types/ws": "^8.5.0",
     "@yao-pkg/pkg": "^6.15.0",
     "esbuild": "^0.28.0",
-    "typescript": "^5.7.0",
+    "typescript": "^7.0.0",
     "vitest": "^3.1.0"
   },
   "engines": {
