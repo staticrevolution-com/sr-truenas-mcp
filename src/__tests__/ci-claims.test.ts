@@ -109,3 +109,52 @@ describe("Renovate config is self-contained", () => {
     expect((renovate as { vulnerabilityAlerts?: { enabled?: boolean } }).vulnerabilityAlerts?.enabled).toBe(true);
   });
 });
+
+/**
+ * Gates the release workflow's version assertion.
+ *
+ * One release used to be able to publish three artifacts carrying two
+ * different versions. Only the `docker` job derives its version stamp from
+ * the release tag; `npm-tarball` names the tarball from `package.json`, and
+ * `binary` falls back to `package.json` because nothing passes it a
+ * `BUILD_VERSION`. So v1.4.2 shipped an asset literally named
+ * `sr-truenas-mcp-1.4.0.tgz` while the image correctly reported `1.4.2`.
+ *
+ * ⚠ Note which half was fine: the DEPLOYED artifact is the image, so
+ * `system_mcp_version` was telling the truth the whole time. The drift was in
+ * the release assets, not in production — the opposite of what the stale
+ * manifest suggests at a glance.
+ *
+ * The assertion lives in the `test` job because all three publishing jobs
+ * already declare `needs: test`, so a mismatch blocks every artifact instead
+ * of publishing an inconsistent set. This test fails if that step is removed
+ * or stops being gated.
+ */
+describe("release.yml asserts the manifest matches the release tag", () => {
+  const release = read(".github/workflows/release.yml");
+
+  it("carries the assertion step", () => {
+    expect(release).toContain("Assert package.json version matches the release tag");
+  });
+
+  it("compares the tag to package.json and exits non-zero on mismatch", () => {
+    // Re-derive the comparison rather than restate it: the step must read the
+    // manifest, strip the tag's leading "v", and fail.
+    expect(release).toMatch(/require\("\.\/package\.json"\)\.version/);
+    expect(release).toMatch(/\$\{TAG#v\}/);
+    expect(release).toMatch(/exit 1/);
+  });
+
+  it("sits in a job every publishing job depends on", () => {
+    // If the assertion were in its own ungated job, a mismatch would warn
+    // while the artifacts published anyway.
+    const jobs = release.slice(release.indexOf("\njobs:"));
+    const testJob = jobs.slice(jobs.indexOf("\n  test:"), jobs.indexOf("\n  binary:"));
+    expect(testJob).toContain("Assert package.json version matches the release tag");
+    for (const job of ["binary", "docker", "npm-tarball"]) {
+      const start = jobs.indexOf(`\n  ${job}:`);
+      expect(start, `${job} job must exist`).toBeGreaterThan(-1);
+      expect(jobs.slice(start, start + 200)).toContain("needs: test");
+    }
+  });
+});

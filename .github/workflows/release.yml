@@ -27,6 +27,23 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      - name: Assert package.json version matches the release tag
+        # Two of the three publishing jobs stamp their version from
+        # package.json, not from the tag: npm-tarball names the tarball after
+        # it, and binary falls back to it because the docker job is the only
+        # one that passes BUILD_VERSION. So a forgotten bump ships one release
+        # carrying two different versions -- v1.4.2 published an asset named
+        # sr-truenas-mcp-1.4.0.tgz, while the image correctly reported 1.4.2.
+        # This job is already `needs:` by all three, so failing here blocks
+        # every artifact rather than publishing a mismatched set.
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          PKG="$(node -p 'require("./package.json").version')"
+          if [ "${TAG#v}" != "$PKG" ]; then
+            echo "::error::release tag ${TAG} implies version ${TAG#v}, but package.json says ${PKG}. Bump package.json to ${TAG#v} and re-run."
+            exit 1
+          fi
+          echo "package.json ${PKG} matches tag ${TAG}"
       - run: npm ci
       - run: npm run build
       - run: npm test
