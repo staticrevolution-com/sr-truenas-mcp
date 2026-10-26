@@ -50,7 +50,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values, instead of silently publishing mislabelled assets. Verified to
   discriminate in both directions, and the historical `v1.4.1`/`v1.4.2` tags
   would both have been blocked.
+- **Declared `zod`, which this repo imported but never listed as a dependency.**
+  Ten source files `import { z } from "zod"` — it backs every tool schema here
+  — and it appeared in no dependency list at all. It resolved only because the
+  MCP SDK's copy sits hoisted in `node_modules`, so nothing ever failed.
 
+  Two things made that more than untidy. The version was set entirely by a
+  transitive: the advisory sweep above moved it 4.3.6 → 4.6.7 underneath us
+  with no change to our manifest. And **the SDK's own declared range is
+  `^3.25 || ^4.0`, which spans a major boundary** — so a legitimate resolution
+  of the SDK's constraint could hand this repo zod 3, against which these
+  schemas are not written.
+
+  Declared as `^4.6.7`, the version already resolved. `npm ls zod` still shows
+  a single deduped copy at 4.6.7; no tree change.
+
+- **Added a gate for the class, not just the instance**
+  (`src/__tests__/declared-dependencies.test.ts`): it re-derives every bare
+  import specifier from `src/` and fails on any that no dependency list
+  covers. Mutation-verified — removing `zod` from `package.json` fails two
+  assertions by name.
+
+  ⚠ Its first draft reported `server rejected` as an undeclared package,
+  having matched the words `from "server rejected"` inside a **prose comment**
+  in `client.ts`. A gate that names a package nobody imported is a gate
+  someone switches off, so comments are now stripped **and** a specifier
+  containing whitespace is rejected — two independent guards, each sufficient
+  alone, both covered by their own test.
 
 ### Security
 
