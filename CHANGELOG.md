@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.3] — 2026-10-25
+
+### Security
+
+- **Cleared 5 runtime-tree advisories that had accumulated against unchanged
+  dependencies**, restoring CI's blocking `npm audit --omit=dev
+  --audit-level=high` to green. `npm audit fix`, no `--force`:
+
+  | package | change | advisory |
+  |---|---|---|
+  | `body-parser` | 2.3.0 → 2.4.0 | **high** — DoS via trailing bytes after a compressed body |
+  | `zod` | 4.3.6 → 4.6.7 | **high** — memory exhaustion |
+  | `hono` | 4.13.9 → 4.13.14 | moderate — `serveStatic` double-decode |
+  | `ip-address` | 10.7.2 → 10.7.5 | moderate |
+  | `fast-uri` | 3.1.8 → 3.1.9 | moderate (4 advisories) |
+
+  Runtime tree goes from 2 high + 3 moderate to **0**. `package.json` is
+  **unchanged** — every fix is transitive, so no declared range moved. Lockfile:
+  9 versions changed, 0 added, 0 removed, **no major version changes**, and
+  every entry still resolves from `registry.npmjs.org`.
+
+  ⚠ **Only two of the five are on a code path this server can execute, and the
+  reachable one is not the one the advisory text makes sound worst.** This
+  server speaks **stdio only** — `src/mcp-adapter.ts` imports
+  `StdioServerTransport` and nothing else, and the built output contains no
+  HTTP-transport symbols at all. So `body-parser` (via `express`), `hono` (via
+  `@hono/node-server`) and `ip-address` (via `express-rate-limit`) are installed
+  but **never loaded**: they exist only to support the SDK's HTTP transports,
+  which are not used. `fast-uri` arrives via `ajv`, which **is** a direct
+  dependency of the SDK rather than an express-gated one, so it may load.
+  **`zod` is unambiguously reachable** — it backs every tool schema in this
+  repo.
+
 ### Fixed
 
 - **One release could publish three artifacts carrying two different
@@ -78,42 +111,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   containing whitespace is rejected — two independent guards, each sufficient
   alone, both covered by their own test.
 
+- **No functional change in this release.** Behaviour, the action surface and
+  the tier counts are identical to 1.4.2; every change above is dependency
+  hygiene, release plumbing or a test. 369 tests, build and type-check pass.
+
+## [1.4.2] — 2026-10-17
+
 ### Security
 
-- **Cleared 5 runtime-tree advisories that had accumulated against unchanged
-  dependencies**, restoring CI's blocking `npm audit --omit=dev
-  --audit-level=high` to green. `npm audit fix`, no `--force`:
+- **`proxy-addr` 2.0.8 and MCP SDK 1.32.1**, clearing a critical and a high
+  advisory in the runtime tree. Released without a changelog entry at the
+  time; recorded here from commit `3c01e90` when the surrounding sections
+  were filed.
 
-  | package | change | advisory |
-  |---|---|---|
-  | `body-parser` | 2.3.0 → 2.4.0 | **high** — DoS via trailing bytes after a compressed body |
-  | `zod` | 4.3.6 → 4.6.7 | **high** — memory exhaustion |
-  | `hono` | 4.13.9 → 4.13.14 | moderate — `serveStatic` double-decode |
-  | `ip-address` | 10.7.2 → 10.7.5 | moderate |
-  | `fast-uri` | 3.1.8 → 3.1.9 | moderate (4 advisories) |
-
-  Runtime tree goes from 2 high + 3 moderate to **0**. `package.json` is
-  **unchanged** — every fix is transitive, so no declared range moved. Lockfile:
-  9 versions changed, 0 added, 0 removed, **no major version changes**, and
-  every entry still resolves from `registry.npmjs.org`.
-
-  ⚠ **Only two of the five are on a code path this server can execute, and the
-  reachable one is not the one the advisory text makes sound worst.** This
-  server speaks **stdio only** — `src/mcp-adapter.ts` imports
-  `StdioServerTransport` and nothing else, and the built output contains no
-  HTTP-transport symbols at all. So `body-parser` (via `express`), `hono` (via
-  `@hono/node-server`) and `ip-address` (via `express-rate-limit`) are installed
-  but **never loaded**: they exist only to support the SDK's HTTP transports,
-  which are not used. `fast-uri` arrives via `ajv`, which **is** a direct
-  dependency of the SDK rather than an express-gated one, so it may load.
-  **`zod` is unambiguously reachable** — it backs every tool schema in this
-  repo.
-
-### Fixed
-
-- Nothing functional. Behaviour, action surface and tier counts are unchanged;
-  361 tests, build and type-check all pass on the updated tree.
-
+## [1.4.1] — 2026-09-29
 
 ### Added
 
