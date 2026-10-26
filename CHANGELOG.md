@@ -30,6 +30,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already declare `needs: test` on, so a mismatch blocks **every** artifact
   rather than shipping an inconsistent set.
 
+  **The release tag now reaches every script through `env`, never
+  interpolated into a `run:` block.** A `${{ }}` expansion is substituted into
+  the shell source before bash parses it, so a crafted tag name would execute
+  as code; `"$TAG"` is only ever a value. Only maintainers can publish a
+  release here, so this is shape rather than live exposure — but this repo is
+  public, and it is the pattern reviewers and scanners flag.
+
+  ⚠ **The new assertion step was one of four jobs doing it.** `binary` and
+  `npm-tarball` interpolated the tag straight into a `gh release upload`, and
+  `docker` assigned it the same way; all three predate this change. Fixing only
+  the new step would have left the identical pattern three jobs away in the
+  same file, with a test passing over it — so the gate is scoped to **every**
+  `run:` block in the workflow, and is mutation-verified by reintroducing a
+  single interpolation in an untouched job.
+
   ⚠ **This makes the version bump mandatory at release time** — tagging
   `v1.4.3` without bumping now fails the release with a message naming both
   values, instead of silently publishing mislabelled assets. Verified to

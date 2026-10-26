@@ -36,8 +36,15 @@ jobs:
         # sr-truenas-mcp-1.4.0.tgz, while the image correctly reported 1.4.2.
         # This job is already `needs:` by all three, so failing here blocks
         # every artifact rather than publishing a mismatched set.
+        # The tag reaches every script below through env, never interpolated
+        # into `run:`. A `${{ }}` expansion is substituted into the shell
+        # source before bash parses it, so a crafted tag name would run as
+        # code; "$TAG" is only ever a value. Only maintainers can publish a
+        # release here, so this is shape rather than live exposure -- but the
+        # repo is public and this is what reviewers and scanners flag.
+        env:
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          TAG="${{ github.event.release.tag_name }}"
           PKG="$(node -p 'require("./package.json").version')"
           if [ "${TAG#v}" != "$PKG" ]; then
             echo "::error::release tag ${TAG} implies version ${TAG#v}, but package.json says ${PKG}. Bump package.json to ${TAG#v} and re-run."
@@ -95,8 +102,9 @@ jobs:
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
+          gh release upload "$TAG" \
             dist/sr-truenas-mcp-linux-x64.tar.gz \
             dist/sr-truenas-mcp-linux-x64.tar.gz.sha256 \
             dist/sr-truenas-mcp-linux-x64.spdx.json
@@ -109,10 +117,11 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
       - name: Build and push Docker image
+        env:
+          TAG: ${{ github.event.release.tag_name }}
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           IMAGE_LOWER=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
-          TAG="${{ github.event.release.tag_name }}"
           # Strip leading "v" from the tag for the version stamp so it
           # matches the bundle script's natural format (1.0.1+abc1234).
           PKG_VER="${TAG#v}"
@@ -144,6 +153,7 @@ jobs:
       - name: Upload npm tarball to release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
+          gh release upload "$TAG" \
             sr-truenas-mcp-*.tgz
