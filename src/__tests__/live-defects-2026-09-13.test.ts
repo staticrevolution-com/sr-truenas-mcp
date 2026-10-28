@@ -199,6 +199,13 @@ describe("#3 validateHomeDirectory accepts the product's own default", () => {
 // UPSTREAM SOURCE — plugins/snapshot.py on origin/release/26.0.0-BETA.1
 // does `task["enabled"]` against a pydantic model. Fixed upstream in
 // b237df99 (NAS-140147, 27.0.0-BETA.1). Not fixable in this server.
+//
+// ✅ RESOLVED BY UPGRADE, confirmed on 27.0.0-RC.1 (2026-10-27): the action
+// works there and returns null. The fallback below is still correct and is
+// kept — it fires only on the "not subscriptable" signature, so it is inert
+// on a fixed release and still useful to anyone on 26.0. What the upgrade
+// changed is the DESCRIPTION, which claimed brokenness with no version
+// scope; the last test in this block is the gate on that shape.
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("#1 snapshot_task_run explains the upstream bug instead of leaking EINVAL", () => {
@@ -280,6 +287,32 @@ describe("#1 snapshot_task_run explains the upstream bug instead of leaking EINV
       confirm: true,
     });
     expect(contentText(result)).toBe("null");
+  });
+
+  // The description said "broken by an upstream middleware bug on TrueNAS 26.0"
+  // with no statement of what happens elsewhere, which a caller on 27.0 reads as
+  // "this action does not work" — and it does. Nothing here can check a remote
+  // middleware's behaviour, so this gates the SHAPE of the claim rather than its
+  // truth: every assertion of brokenness must carry the release it applies to.
+  // An unscoped "this action is broken" sentence fails this test.
+  it("scopes every brokenness claim in its description to a release", () => {
+    const registry = buildRegistry(stubClient({}));
+    const desc = registry.tools.get("snapshot_task_run")!.description ?? "";
+
+    // Non-emptiness first, so the loop below cannot pass by having nothing to
+    // iterate over.
+    expect(desc.length).toBeGreaterThan(40);
+
+    const claims = desc
+      .split(/(?<=\.)\s+/)
+      .filter((s) => /\b(broken|unavailable|cannot work|does not work)\b/i.test(s));
+
+    for (const sentence of claims) {
+      expect(sentence, `unscoped brokenness claim: ${sentence}`).toMatch(/\d+\.\d+/);
+    }
+
+    // And the working case is stated at all, with the release it was seen on.
+    expect(desc).toMatch(/27\.0/);
   });
 });
 

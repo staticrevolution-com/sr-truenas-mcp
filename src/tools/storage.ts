@@ -872,7 +872,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "snapshot_task_run",
-    "Run a periodic snapshot task immediately. NOTE: broken by an upstream middleware bug on TrueNAS 26.0 — see the error text if it fails.",
+    "Run a periodic snapshot task immediately. Works on TrueNAS 27.0 — verified against 27.0.0-RC.1 on 2026-10-27; a success returns null, and the snapshot is named from the task's naming_schema. Broken by an upstream middleware bug on 26.0, where the error text explains the cause and the workaround.",
     { id: z.number().describe("Snapshot task ID") },
     async ({ id }) => {
       try {
@@ -939,8 +939,10 @@ async function describeSnapshotTaskRunBug(
     `Cause: pool.snapshottask.run does \`task["enabled"]\` on a value that is now a`,
     `pydantic model rather than a dict, so it raises TypeError before doing any work.`,
     `No combination of arguments makes it succeed. Fixed upstream in TrueNAS`,
-    `27.0.0-BETA.1 (middleware commit b237df99, NAS-140147); on 26.0 the only`,
-    `remedies are to upgrade or to take the snapshot by hand.`,
+    `27.0.0-BETA.1 (middleware commit b237df99, NAS-140147), and the fix is`,
+    `confirmed working — a run on 27.0.0-RC.1 (2026-10-27) produced its snapshot`,
+    `and returned null. So on 26.0 the remedies are to upgrade, which is known to`,
+    `resolve this, or to take the snapshot by hand.`,
     ``,
     `The task itself is unaffected — its schedule keeps running normally. Only`,
     `run-it-now is broken.`,

@@ -2,7 +2,7 @@
 
 **Target:** TrueNAS `26.0.0-BETA.1`, WebSocket JSON-RPC 2.0 (`wss://<host>:444/websocket`).
 **Server:** `sr-truenas-mcp` 1.2.1 (defects found); fixes released in 1.3.0.
-**Status:** four fixed here, one is upstream and cannot be fixed here.
+**Status:** four fixed here, one is upstream and cannot be fixed here — ✅ **that one (#4) is resolved on TrueNAS 27.0, confirmed 2026-10-27;** see the note in its section.
 
 Five problems surfaced in a single operator session. Individually each looked
 small; together they turned a fifteen-minute task into an hour and briefly put a
@@ -202,6 +202,23 @@ unchanged everywhere else.
 
 **Evidence: reproduced live and read from upstream source. Not fixable; the error message is now useful.**
 
+> ✅ **RESOLVED BY UPGRADE, confirmed 2026-10-27 on TrueNAS `27.0.0-RC.1`.**
+> Everything below remains accurate **for 26.0**, which is the release it was
+> measured against, and is kept as history rather than rewritten. On 27.0 the
+> action works: snapshot task 8 (`data-pool/apps/litellm/postgres`) was run
+> at 16:25 CDT, produced `@auto-litellm-pg-2026-10-27_16-25`, and the call
+> returned `null` — normal for this middleware method, which reports nothing on
+> success.
+>
+> ⚠ **The run was performed by a sister session (`omarchy-1`), so that half is
+> testimony, not my own measurement.** What this repo verified independently is
+> the **artefact**: a tier-3 `snapshot_list` on that dataset returns the named
+> snapshot at `createtxg` 14393865, which falls between the 10-27 03:00
+> (14383702) and 10-28 02:00 (14401381) scheduled snapshots — so it was written
+> when claimed. It is also the only `auto-litellm-pg-*` snapshot not at `_02-00`,
+> i.e. not a scheduled firing. That corroborates the run without re-running it;
+> re-running is a tier-2 write on production and was not mine to do.
+
 ```
 snapshot_task_run {"id": 14}
   ->  [EINVAL] 'PeriodicSnapshotTaskQueryResultItem' object is not subscriptable (code 22)
@@ -362,7 +379,7 @@ that answers every call cannot express "nothing has happened yet".
 | 1 | `snapshot_list` filtered client-side after server-side paging | reproduced live | fixed — filter pushed to the server |
 | 2 | no file content read/write | surface enumerated live; HTTP contract from source; transfers not live-exercised | `filesystem_get` + `filesystem_put` added; **delete impossible, documented** |
 | 3 | `/mnt/` guard applied to `home` | reproduced live | fixed — `validateHomeDirectory` |
-| 4 | `snapshot_task_run` EINVAL | reproduced live + upstream source | upstream bug; actionable diagnosis added |
+| 4 | `snapshot_task_run` EINVAL | reproduced live + upstream source | upstream bug on 26.0; actionable diagnosis added — ✅ **fixed by the 27.0 upgrade, confirmed 2026-10-27** |
 | 5 | own version unreportable | **confirmed** — backend pin read as `:v1.2.1` | `system_mcp_version` added |
 | 6 | `waitForJob` never reconnected on the upload path | reproduced live | fixed + regression-gated |
 
