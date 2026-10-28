@@ -205,19 +205,18 @@ unchanged everywhere else.
 > ✅ **RESOLVED BY UPGRADE, confirmed 2026-10-27 on TrueNAS `27.0.0-RC.1`.**
 > Everything below remains accurate **for 26.0**, which is the release it was
 > measured against, and is kept as history rather than rewritten. On 27.0 the
-> action works: snapshot task 8 (`data-pool/apps/litellm/postgres`) was run
-> at 16:25 CDT, produced `@auto-litellm-pg-2026-10-27_16-25`, and the call
-> returned `null` — normal for this middleware method, which reports nothing on
-> success.
+> action works: a periodic snapshot task was run on demand, it produced a
+> snapshot named from its own `naming_schema`, and the call returned `null` —
+> normal for this middleware method, which reports nothing on success.
 >
-> ⚠ **The run was performed by a sister session (`omarchy-1`), so that half is
-> testimony, not my own measurement.** What this repo verified independently is
-> the **artefact**: a tier-3 `snapshot_list` on that dataset returns the named
-> snapshot at `createtxg` 14393865, which falls between the 10-27 03:00
-> (14383702) and 10-28 02:00 (14401381) scheduled snapshots — so it was written
-> when claimed. It is also the only `auto-litellm-pg-*` snapshot not at `_02-00`,
-> i.e. not a scheduled firing. That corroborates the run without re-running it;
-> re-running is a tier-2 write on production and was not mine to do.
+> ⚠ **The run was performed by a different operator session, so that half is
+> testimony rather than this repo's own measurement.** What was verified
+> independently is the **artefact**: a tier-3 `snapshot_list` on the target
+> dataset returns the expected snapshot, and its `createtxg` falls between those
+> of the preceding and following *scheduled* snapshots — so it was written when
+> claimed. It is also the only snapshot of that series whose encoded time is not
+> a scheduled slot, i.e. not a scheduled firing. That corroborates the run
+> without re-running it; re-running is a tier-2 write on a production system.
 
 ```
 snapshot_task_run {"id": 14}

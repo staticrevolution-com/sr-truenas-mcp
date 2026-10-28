@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   description, the Known Limitations entry in `CLAUDE.md`, and the 2026-09-13
   field report all said it "cannot work" on the strength of a 26.0 measurement,
   with no statement of what happens on a later release. It **works on TrueNAS
-  27.0** — confirmed 2026-10-27 on `27.0.0-RC.1`: snapshot task 8 ran, produced
-  `@auto-litellm-pg-2026-10-27_16-25`, and returned `null`, which is normal for
+  27.0** — confirmed 2026-10-27 on `27.0.0-RC.1`: a periodic snapshot task was
+  run on demand, produced its snapshot, and returned `null`, which is normal for
   this middleware method. The 26.0 behaviour is kept as history, scoped to the
   release it was measured on, because the evidence for it stands (reproduced
   live plus the upstream source).
