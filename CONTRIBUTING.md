@@ -60,7 +60,7 @@ compatible — please flag this in the PR description.
 
 ## Coding standards
 
-- TypeScript, ES modules, Node 20 LTS target.
+- TypeScript, ES modules, Node 26 LTS target.
 - Tests live under `src/__tests__/`, mirroring the source structure.
   Vitest is the runner.
 - New TrueNAS actions: add the handler to the appropriate

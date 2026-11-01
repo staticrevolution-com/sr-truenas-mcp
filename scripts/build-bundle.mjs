@@ -50,7 +50,7 @@ await esbuild.build({
   entryPoints: [resolve(REPO, "dist/cli.js")],
   bundle: true,
   platform: "node",
-  target: "node20",
+  target: "node26",
   format: "cjs",
   outfile: resolve(REPO, "dist/bundle.cjs"),
   define: {

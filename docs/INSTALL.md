@@ -51,7 +51,7 @@ curl -L \
   | sha256sum --check
 ```
 
-The binary embeds Node.js 20 and is self-contained. Linux x64 only.
+The binary embeds Node.js 26 and is self-contained. Linux x64 only.
 
 ### 2. Docker
 

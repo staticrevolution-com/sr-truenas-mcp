@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Moved CI, the release workflow, the Docker image and the standalone binary
+  from Node 20 to Node 26.** Node 20 reached end of life in April 2026, so the
+  published image had been shipping an unsupported runtime for four releases.
+  Renovate's #48 proposed half of this — the action bumps and `node-version`
+  20 → 26 in both workflows — which on its own would have left CI testing on 26
+  while the artifact everything actually runs stayed on `node:20-alpine`. This
+  carries #48's change (same pinned action SHAs) together with the parts that
+  make it true of the product:
+
+  - `Dockerfile`, both stages → `node:26-alpine`, **pinned by digest**
+    (`sha256:c6ad9e9c…`, the multi-arch index covering linux/amd64 and
+    linux/arm64). The repo pinned its GitHub Actions to commit SHAs but left
+    its only base image on a floating tag; it is now pinned the same way, with
+    the human-readable tag kept beside the digest so a reader can see which
+    release it claims to be.
+  - `build:binary` → `--target node26-linux-x64`, and the esbuild bundle target
+    → `node26`. The released binary embeds its own runtime, so it was the
+    second place shipping EOL Node. Verified: the produced binary reports
+    `v26.12.1` internally, from a pkg-fetch **prebuild**, not a source build.
+  - `CONTRIBUTING.md`'s "Node 20 LTS target" → 26, and three docs that
+    named the embedded runtime (`CLAUDE.md`, `COMPARISON.md`,
+    `docs/INSTALL.md`).
+  - **The binary is now ~78MB, not ~55MB** — a larger embedded runtime,
+    measured at 81,621,748 bytes rather than estimated. Corrected in the
+    three places that stated the old figure. The size claim was true until
+    this commit made it false, which is the whole reason to re-measure a
+    recorded number when you change the thing it describes.
+
+  **`engines` stays `>=18.0.0`, deliberately.** It governs the npm package,
+  whose `dist/*.js` is emitted by `tsc` at `target: ES2022` and did not change;
+  only the bundle and the binary moved to Node 26 syntax. Those are different
+  artifacts with different floors, and collapsing them would narrow the npm
+  package's support for no reason.
+
+### Added
+
+- **A `Docker image` CI job, because the image was the one artifact nothing
+  built outside a release.** `release.yml` fires only on `release: published`,
+  so `node-version` in `ci.yml` and `FROM` in the `Dockerfile` could drift
+  apart with every check green — which is exactly how the 20-vs-26 split above
+  arose. The job builds the image on every push and PR and then asserts, in
+  order: the two files name the same Node major (re-derived from both, failing
+  if either parse comes back empty or multi-valued, so it cannot pass
+  vacuously); the **built image's own** `node -v` matches its `FROM`, since a
+  digest pin can outlive the tag written beside it; and the bundled entrypoint
+  runs, reporting a `--version` that carries `package.json`'s version. It
+  builds only — no registry credentials, no push, nothing deployed.
+
 ### Documented
 
 - **`snapshot_task_run` no longer describes itself as broken.** The action's

@@ -15,10 +15,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 20
+          node-version: 26
           cache: npm
       - run: npm ci
       - run: npm run build
@@ -29,10 +29,10 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 20
+          node-version: 26
           cache: npm
       - run: npm ci
 
@@ -66,3 +66,74 @@ jobs:
             npm audit --audit-level=low 2>&1 || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  image:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # The image is the production artifact — the gateway runs the GHCR
+      # container, not this repo's source — but until now nothing built it
+      # outside a `release: published` run. So `node-version` here and `FROM`
+      # in the Dockerfile could drift apart with CI fully green, and did:
+      # four releases shipped on node:20-alpine, EOL since April 2026, while
+      # this file was being bumped to 26.
+      #
+      # This step re-derives both numbers from the two files rather than
+      # restating either, so the gate fails on the drift itself. It asserts
+      # each side is non-empty and single-valued FIRST: two empty strings
+      # compare equal, and a mixed-version workflow would otherwise collapse
+      # to one value under `sort -u` and pass.
+      - name: Assert the Dockerfile runtime matches this workflow's Node major
+        run: |
+          CI_MAJOR="$(sed -n 's/^ *node-version: *\([0-9][0-9]*\).*/\1/p' .github/workflows/ci.yml | sort -u)"
+          IMG_MAJOR="$(sed -n 's/^FROM node:\([0-9][0-9]*\)-alpine.*/\1/p' Dockerfile | sort -u)"
+          echo "ci.yml node-version: ${CI_MAJOR:-<none>}"
+          echo "Dockerfile FROM:     ${IMG_MAJOR:-<none>}"
+          for pair in "ci.yml:$CI_MAJOR" "Dockerfile:$IMG_MAJOR"; do
+            name="${pair%%:*}"; value="${pair#*:}"
+            if [ -z "$value" ]; then
+              echo "::error::found no Node major in ${name} — this gate's parser is broken, not the versions"
+              exit 1
+            fi
+            if [ "$(printf '%s\n' "$value" | wc -l)" -ne 1 ]; then
+              echo "::error::${name} names more than one Node major: $(printf '%s' "$value" | tr '\n' ' ')"
+              exit 1
+            fi
+          done
+          if [ "$CI_MAJOR" != "$IMG_MAJOR" ]; then
+            echo "::error::CI tests on Node ${CI_MAJOR} but the image ships Node ${IMG_MAJOR}. Move both, or neither."
+            exit 1
+          fi
+
+      - name: Build the image
+        run: docker build -t sr-truenas-mcp:ci .
+
+      # Proves the image's Node major from the image itself, not from the
+      # Dockerfile text the previous step read. A digest pin can outlive the
+      # tag beside it, so the tag is not evidence of what is inside.
+      - name: Assert the built image's own Node runtime
+        run: |
+          IN_IMAGE="$(docker run --rm --entrypoint node sr-truenas-mcp:ci -v)"
+          echo "node in image: ${IN_IMAGE}"
+          EXPECTED="$(sed -n 's/^FROM node:\([0-9][0-9]*\)-alpine.*/\1/p' Dockerfile | sort -u)"
+          case "$IN_IMAGE" in
+            v"$EXPECTED".*) echo "matches FROM node:${EXPECTED}-alpine" ;;
+            *) echo "::error::image runs ${IN_IMAGE}, expected v${EXPECTED}.x"; exit 1 ;;
+          esac
+
+      # The entrypoint is `node dist/bundle.cjs`, so these run the bundled
+      # artifact the gateway actually executes. Without --build-arg the stamp
+      # falls back to `<pkg.version>+unknown`; assert the version half, which
+      # catches a bundle that never got the esbuild --define.
+      - name: Run the bundle inside the image
+        run: |
+          PKG_VER="$(node -p 'require("./package.json").version')"
+          OUT="$(docker run --rm sr-truenas-mcp:ci --version)"
+          echo "--version: ${OUT}"
+          case "$OUT" in
+            "$PKG_VER"+*) echo "stamp carries package.json version ${PKG_VER}" ;;
+            *) echo "::error::--version printed '${OUT}', expected ${PKG_VER}+<provenance>"; exit 1 ;;
+          esac
+          docker run --rm sr-truenas-mcp:ci --help

@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsc",
     "bundle": "node scripts/build-bundle.mjs",
-    "build:binary": "npm run build && npm run bundle && pkg dist/bundle.cjs --target node20-linux-x64 --output dist/sr-truenas-mcp --compress GZip",
+    "build:binary": "npm run build && npm run bundle && pkg dist/bundle.cjs --target node26-linux-x64 --output dist/sr-truenas-mcp --compress GZip",
     "dev": "tsc --watch",
     "start": "node dist/cli.js",
     "test": "vitest run",

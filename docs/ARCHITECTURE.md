@@ -429,7 +429,7 @@ flowchart LR
     Dist --> Bundle["npm run bundle<br/>(esbuild)"]
     Bundle --> CJS["dist/bundle.cjs"]
     CJS --> Pkg["@yao-pkg/pkg"]
-    Pkg --> Bin["dist/sr-truenas-mcp<br/>(Linux x64 binary, ~55MB)"]
+    Pkg --> Bin["dist/sr-truenas-mcp<br/>(Linux x64 binary, ~78MB)"]
 ```
 
 The bundle step injects `__BUILD_VERSION__` (`<pkg.version>+<git-short-sha>[.dirty]`)
