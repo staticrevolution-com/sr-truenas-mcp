@@ -42,7 +42,7 @@ npm run audit:counts   # print structural counts (filter, tiers, validation surf
 
 ### Standalone Binary
 
-`npm run build:binary` produces a self-contained Linux x64 ELF binary at `dist/sr-truenas-mcp` (~55MB). Embeds Node.js 20 runtime via esbuild bundling + @yao-pkg/pkg. Used as the stdio backend for an MCP gateway (the `sr-mcp-gateway` process-strategy backend) — see Deployment.
+`npm run build:binary` produces a self-contained Linux x64 ELF binary at `dist/sr-truenas-mcp` (~78MB). Embeds Node.js 26 runtime via esbuild bundling + @yao-pkg/pkg. Used as the stdio backend for an MCP gateway (the `sr-mcp-gateway` process-strategy backend) — see Deployment.
 
 The bundle step (`scripts/build-bundle.mjs`) injects `__BUILD_VERSION__` (`<pkg.version>+<git-short-sha>[.dirty]`) via esbuild `--define`. The binary then exposes it through `--version`/`-v`, so the deployed artifact identifies itself without sha256-detective work. Direct `node dist/cli.js` (no bundle step) reports `dev`.
 

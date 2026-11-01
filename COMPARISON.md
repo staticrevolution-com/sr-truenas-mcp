@@ -35,7 +35,7 @@ A short version suitable for the README:
 
 | | sr-truenas-mcp | spranab/truenas-mcp | truenas/truenas-mcp |
 |---|---|---|---|
-| **Language / runtime** | TypeScript (Node.js 20, ~55MB single-file Linux binary) | TypeScript (Node.js) | Go (cross-platform binaries) |
+| **Language / runtime** | TypeScript (Node.js 26, ~78MB single-file Linux binary) | TypeScript (Node.js) | Go (cross-platform binaries) |
 | **Transport** | WebSocket (`wss://`, JSON-RPC 2.0 / DDP) | REST (`https://`, Bearer token) | WebSocket (`wss://` only — `ws://` revokes the API key) |
 | **Action coverage** | 270 actions, 17 categories | ~278 actions, 18 categories | 52 tools, flat |
 | **MCP tool model** | Single hierarchical `truenas` tool with discovery modes | Single hierarchical `truenas` tool with discovery modes | 52 separate MCP tools (flat `tools/list`) |
