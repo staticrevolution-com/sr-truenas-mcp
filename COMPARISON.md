@@ -45,7 +45,7 @@ A short version suitable for the README:
 | **Destructive-action safety** | 4-tier classification, two-phase confirm, fail-closed registration | Per-handler `if (!confirm)` checks | Dry-run mode (preview before execute) |
 | **Response filtering for secrets** | Centralized 3-layer filter (57 exact + 9 suffix + 15-entry allowlist) | None | Per-handler hand-crafted masking |
 | **Path & dataset-name validation** | Centralized validators on every filesystem and ZFS-side handler | None | None visible at the helper level |
-| **Tests** | 211 (Vitest), 12 test files | None | 27 (Go test), 6 test files |
+| **Tests** | Vitest, **23 test files** | None | 27 (Go test), 6 test files |
 | **CI** | Yes (build + test + audit) | None | Yes (build + test + cross-platform release) |
 | **License** | PolyForm Noncommercial 1.0.0 (source-available, free for non-commercial use) | MIT | GPL-3.0 |
 | **Status** | Released — v1.0.0 | Single-shot publication (2 commits, 2026-03-31) | "Research Preview — not recommended for production use" |
@@ -164,8 +164,8 @@ Spranab's repo has no test files, no `test` script in `package.json`, and no
 test-framework dependency
 ([repo root listing](https://github.com/spranab/truenas-mcp)).
 
-sr-truenas-mcp ships **211 tests across 12 test files** (Vitest). CI runs the
-full suite plus `tsc --noEmit` and `npm audit` on every push.
+sr-truenas-mcp ships a Vitest suite across **23 test files**. CI runs the full
+suite plus `tsc --noEmit` and `npm audit` on every push.
 
 #### Maintenance state
 

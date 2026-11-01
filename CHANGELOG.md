@@ -9,6 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The docs no longer state a per-test count, because nothing could
+  re-derive one.** `CLAUDE.md` said "272 tests" against a suite of 378;
+  `README.md` and `COMPARISON.md` both said "211 tests across 12 test files",
+  a v1.1.0 figure stale by 167 tests and 11 files — sitting in the two
+  documents a reader consults to judge whether this project is rigorous.
+  Three consecutive PRs corrected an adjacent claim and left these, because
+  each time they were the next-door subject.
+
+  🔑 **The number was ungatable, which is why it kept decaying.** Counting
+  `it(` and `test(` calls gives 329; the suite reports 383, because the
+  `it.each(...)` calls expand. Expanding them statically means evaluating
+  array literals, one of which is a variable declared above its call — so the
+  obvious gate would be a parser that is wrong by ~50 and confidently green.
+
+  So the docs now state the **number of test files**, which is derivable, and
+  the per-test figure is gone rather than re-pinned to a fresher number. The
+  claim about what CI runs is unchanged and was already gated by
+  `ci-claims.test.ts`.
+
+### Added
+
+- **A gate on both halves of that claim**, in `doc-sync.test.ts` beside the
+  existing numerical doc-sync assertions: the test-file count in `README.md`
+  and `COMPARISON.md` must equal what is in `src/__tests__`, and no living doc
+  may re-pin a per-test count — with the message naming the offending file and
+  saying what to write instead.
+
+  Three things make it a gate rather than a sentence. It asserts it **found
+  test files at all**, so it cannot compare 0 against 0. The negative
+  assertion carries an **inline positive control**, because a pattern that
+  matches nothing passes exactly like one that works. And the own-project
+  claim is scoped by its **bold marker**: `COMPARISON.md` is a comparison and
+  its table also states "6 test files" for a third-party project — the first
+  version matched 6 and 23 alike and would have held someone else's number to
+  ours, so there is a control for that too.
+
+  ⚠ `CHANGELOG.md` and the `PLAN-*` files are deliberately out of scope. They
+  state counts as of a dated release and are correct **as history**; gating
+  them would mean rewriting the record every time the suite grows.
+
 - **Moved CI, the release workflow, the Docker image and the standalone binary
   from Node 20 to Node 26.** Node 20 reached end of life in April 2026, so the
   published image had been shipping an unsupported runtime for four releases.

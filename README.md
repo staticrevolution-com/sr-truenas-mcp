@@ -474,7 +474,7 @@ architectural patterns that satisfy those requirements (the four-tier
 classification, registry-layer enforcement, post-call layered response
 filter) were developed collaboratively with AI tooling (Claude Code).
 Code was reviewed at the architectural and behavioral level rather
-than line-by-line; the test suite (211 tests across 12 files), the
+than line-by-line; the test suite (**23 test files**), the
 fail-closed registration gate, and the doc-sync CI gate exist partly
 to compensate for that review model. Architectural and behavioral
 correctness has been verified; mechanical line-level review of every

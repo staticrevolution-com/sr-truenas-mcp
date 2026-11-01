@@ -190,3 +190,85 @@ describe("Doc-sync drift gate (B7)", () => {
     });
   });
 });
+
+/**
+ * The test-count claim, which decayed three times before it was gated.
+ *
+ * `CLAUDE.md` said "272 tests" against a suite of 378. `README.md` and
+ * `COMPARISON.md` both said "211 tests across 12 test files" — a figure from
+ * v1.1.0, stale by 167 tests and 11 files, sitting in the two documents a
+ * reader consults to judge whether this project is rigorous. Three PRs in a
+ * row corrected an adjacent claim and left these, because each was the
+ * next-door subject every time.
+ *
+ * 🔑 A per-test total cannot be derived in-repo, which is why it kept
+ * decaying. Counting `it(` and `test(` calls gives 329; the suite reports 378,
+ * because five `it.each(...)` calls expand to 49 tests. Expanding them
+ * statically means evaluating array literals — one of them is a variable
+ * declared above the call — so the "obvious" gate would be a parser that is
+ * wrong by 49 and confidently green.
+ *
+ * So the docs now state only what IS derivable — the number of test files —
+ * and the per-test number is gone rather than re-pinned to 378. A count no
+ * gate can re-derive is a claim with a timer on it; the fourth hand-edited
+ * figure would have been the same defect with a fresher number.
+ */
+describe("Test-suite claims in the docs", () => {
+  const TESTS_DIR = resolve(SRC, "__tests__");
+  const testFiles = readdirSync(TESTS_DIR).filter((f) => f.endsWith(".test.ts"));
+
+  // Population check: if the glob ever yields nothing, every assertion below
+  // would compare 0 against 0 or pass over an empty set.
+  it("finds the test files it is counting", () => {
+    expect(testFiles.length).toBeGreaterThan(0);
+  });
+
+  const fileClaims: Array<[string, string]> = [
+    ["README.md", read(resolve(REPO, "README.md"))],
+    ["COMPARISON.md", read(resolve(REPO, "COMPARISON.md"))],
+  ];
+
+  // ⚠ The **bold** is the scope marker, and it is load-bearing. COMPARISON.md
+  // is a comparison: its table also states "6 test files" for a THIRD-PARTY
+  // project, which this gate must not hold to our count. An unbolded figure is
+  // someone else's; ours is bolded, which is how that file already wrote it.
+  // A first version without this matched 6 and 23 alike and would have forced
+  // another project's number to equal ours.
+  const CLAIM = /\*\*(\d+) test files\*\*/g;
+
+  it("the scope marker discriminates ours from a third party's", () => {
+    // Two controls, because a pattern that matches nothing and a pattern that
+    // matches everything both look like a passing gate from the outside.
+    expect([..."ships **23 test files**".matchAll(CLAIM)].map((m) => m[1])).toEqual(["23"]);
+    expect([..."27 (Go test), 6 test files".matchAll(CLAIM)]).toEqual([]);
+  });
+
+  it.each(fileClaims)("%s's test-file count matches src/__tests__", (name, text) => {
+    const matches = [...text.matchAll(CLAIM)].map((m) => Number(m[1]));
+    expect(matches, `${name} states no test-file count`).not.toEqual([]);
+    for (const claimed of matches) {
+      expect(claimed, `${name} claims ${claimed} test files, found ${testFiles.length}`)
+        .toBe(testFiles.length);
+    }
+  });
+
+  it("no doc re-pins a per-test count, because nothing can re-derive one", () => {
+    // ⚠ Scope: the living docs only. CHANGELOG.md and the PLAN-* files state
+    // counts as of a dated release and are correct AS history — gating them
+    // would force rewriting the record every time the suite grows.
+    const living = ["README.md", "COMPARISON.md", "CLAUDE.md", "CONTRIBUTING.md"];
+    const pattern = /\b\d+ tests\b/g;
+
+    // Positive control, inline: a negative assertion that never matches
+    // anything passes whether or not the pattern works. This proves it does.
+    expect("the suite has 378 tests today".match(pattern)).not.toBeNull();
+
+    for (const name of living) {
+      const text = read(resolve(REPO, name));
+      expect(text.length, `${name} read as empty`).toBeGreaterThan(0);
+      const hits = [...text.matchAll(pattern)].map((m) => m[0]);
+      expect(hits, `${name} states a per-test count (${hits.join(", ")}) that no gate can check — state test files instead, or drop the number`)
+        .toEqual([]);
+    }
+  });
+});
