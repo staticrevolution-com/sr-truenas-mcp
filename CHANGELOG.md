@@ -45,17 +45,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **A `Docker image` CI job, because the image was the one artifact nothing
-  built outside a release.** `release.yml` fires only on `release: published`,
-  so `node-version` in `ci.yml` and `FROM` in the `Dockerfile` could drift
-  apart with every check green — which is exactly how the 20-vs-26 split above
-  arose. The job builds the image on every push and PR and then asserts, in
-  order: the two files name the same Node major (re-derived from both, failing
-  if either parse comes back empty or multi-valued, so it cannot pass
-  vacuously); the **built image's own** `node -v` matches its `FROM`, since a
-  digest pin can outlive the tag written beside it; and the bundled entrypoint
-  runs, reporting a `--version` that carries `package.json`'s version. It
-  builds only — no registry credentials, no push, nothing deployed.
+- **A gate asserting every artifact names the same Node major**, in
+  `ci-claims.test.ts` beside the existing CI-claims and doc-sync gates. The
+  runtime is named in five files that nothing compared — both workflows, the
+  `Dockerfile`, the pkg target, the esbuild target — so Renovate could move the
+  workflows alone and leave CI testing a runtime the product does not ship,
+  green the whole way, because no single file was wrong. It re-derives the
+  major from each file instead of asserting a number, checks that the three
+  docs stating the embedded runtime agree with what the `Dockerfile` actually
+  ships, and requires the base image to be digest-pinned.
+
+  Each source is asserted to yield at least one match **first**: a rename that
+  breaks all five regexes otherwise leaves five empty sets that agree
+  perfectly. Mutation-verified — reverting the `Dockerfile` to 20 fails the
+  agreement and docs assertions by name, dropping the digest fails only the pin
+  assertion, and breaking one parser fails only that source's emptiness
+  assertion, so the emptiness guard is independently necessary rather than
+  decoration.
+
+  ⚠ `engines` is deliberately outside this set, for the reason given above.
+
+- **A `Docker image` CI job**, for the half of that gate a unit test cannot
+  reach. `release.yml` fires only on `release: published`, so until now nothing
+  built the image on a push at all. The job builds it on every push and PR,
+  then asserts the **built image's own** `node -v` matches its `FROM` — a
+  digest pin can outlive the tag written beside it, so the tag is not evidence
+  of what is inside — and that the bundled entrypoint runs, reporting a
+  `--version` carrying `package.json`'s version, which catches a bundle that
+  never received the esbuild `--define`. The file-vs-file comparison is *not*
+  repeated here; a restated check is a second thing to decay, not a second
+  check. Build only: no registry credentials, no push, nothing deployed.
 
 ### Documented
 

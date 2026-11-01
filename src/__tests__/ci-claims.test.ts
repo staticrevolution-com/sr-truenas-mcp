@@ -181,3 +181,90 @@ describe("release.yml asserts the manifest matches the release tag", () => {
     }
   });
 });
+
+/**
+ * Gates the Node major across every place that names one.
+ *
+ * Node 20 went EOL in April 2026 and four releases shipped on it, because the
+ * runtime is named in five files that nothing compared: two workflows, the
+ * Dockerfile, the pkg target in `package.json`, and the esbuild target in
+ * `scripts/build-bundle.mjs`. Renovate's #48 could move the workflows alone,
+ * leaving CI testing a runtime the product does not ship — green the whole
+ * way, because no single file was wrong.
+ *
+ * This re-derives the major from each file rather than asserting a number, so
+ * the next bump either moves all of them or fails here by name. It is the same
+ * shape as the doc-sync gate: the check is that the sources agree, not that
+ * they equal something written down.
+ *
+ * ⚠ `engines` is deliberately NOT part of this set. It governs the npm
+ * package, whose `dist/*.js` is emitted by `tsc` at `target: ES2022`; only the
+ * bundle and the binary carry Node 26 syntax. Different artifacts, different
+ * floors — folding `engines` in here would force them to move together and
+ * narrow the npm package's support range for no reason.
+ */
+describe("Every artifact names the same Node major", () => {
+  // Each entry yields the majors its file names. A source that matches
+  // nothing returns [], which the emptiness assertion below reports as a
+  // broken parser rather than letting the comparison pass over no data.
+  const sources: Array<[string, () => string[]]> = [
+    [".github/workflows/ci.yml", () =>
+      [...read(".github/workflows/ci.yml").matchAll(/^\s*node-version:\s*(\d+)/gm)].map((m) => m[1])],
+    [".github/workflows/release.yml", () =>
+      [...read(".github/workflows/release.yml").matchAll(/^\s*node-version:\s*(\d+)/gm)].map((m) => m[1])],
+    ["Dockerfile", () =>
+      [...read("Dockerfile").matchAll(/^FROM node:(\d+)-alpine/gm)].map((m) => m[1])],
+    ["package.json (pkg target)", () =>
+      [...read("package.json").matchAll(/--target node(\d+)-/g)].map((m) => m[1])],
+    ["scripts/build-bundle.mjs (esbuild target)", () =>
+      [...read("scripts/build-bundle.mjs").matchAll(/target:\s*"node(\d+)"/g)].map((m) => m[1])],
+  ];
+
+  it.each(sources)("%s names at least one Node major", (_name, majors) => {
+    // Guards the regexes themselves. Without this, a rename that breaks every
+    // pattern leaves five empty arrays that agree perfectly.
+    expect(majors()).not.toEqual([]);
+  });
+
+  it("all five sources agree on one major", () => {
+    const found = Object.fromEntries(sources.map(([name, get]) => [name, [...new Set(get())]]));
+    const distinct = [...new Set(Object.values(found).flat())];
+    expect(distinct, `Node majors disagree: ${JSON.stringify(found)}`).toHaveLength(1);
+  });
+
+  it("the docs claim the Node major the Dockerfile actually ships", () => {
+    const shipped = [...new Set(
+      [...read("Dockerfile").matchAll(/^FROM node:(\d+)-alpine/gm)].map((m) => m[1]),
+    )];
+    expect(shipped).toHaveLength(1);
+
+    // `Node.js 18+` is the npm package's floor (engines), a different claim
+    // about a different artifact — so only bare, unsuffixed majors count.
+    // ⚠ The `\b` is load-bearing. Without it the engine backtracks to a
+    // single digit — `Node.js 18+` matched as major "1", whose next character
+    // is "8" rather than "+", so the lookahead let it through. The first
+    // version of this test failed exactly that way, which is the argument for
+    // writing the gate before trusting the pattern.
+    const claims: Array<[string, string]> = [];
+    for (const f of ["CLAUDE.md", "COMPARISON.md", "docs/INSTALL.md"]) {
+      for (const m of read(f).matchAll(/Node\.js (\d+)\b(?!\s*\+)/g)) {
+        claims.push([f, m[1]]);
+      }
+    }
+    expect(claims.length, "no doc states the embedded Node version").toBeGreaterThan(0);
+    for (const [file, major] of claims) {
+      expect(major, `${file} claims Node.js ${major}, image ships ${shipped[0]}`).toBe(shipped[0]);
+    }
+  });
+
+  it("the base image is pinned by digest, not a floating tag", () => {
+    // A tag can be repointed under us; the actions in these workflows are
+    // pinned to commit SHAs for the same reason. The readable tag stays
+    // beside the digest so a reader can see which release it claims to be.
+    const froms = [...read("Dockerfile").matchAll(/^FROM (\S+)/gm)].map((m) => m[1]);
+    expect(froms.length).toBeGreaterThan(0);
+    for (const ref of froms) {
+      expect(ref, `unpinned base image: ${ref}`).toMatch(/^node:\d+-alpine@sha256:[0-9a-f]{64}$/);
+    }
+  });
+});

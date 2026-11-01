@@ -74,38 +74,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The image is the production artifact — the gateway runs the GHCR
-      # container, not this repo's source — but until now nothing built it
-      # outside a `release: published` run. So `node-version` here and `FROM`
-      # in the Dockerfile could drift apart with CI fully green, and did:
-      # four releases shipped on node:20-alpine, EOL since April 2026, while
-      # this file was being bumped to 26.
+      # container, not this repo's source — but nothing built it outside a
+      # `release: published` run, so `node-version` here and `FROM` in the
+      # Dockerfile could drift apart with every check green. That is how four
+      # releases shipped on node:20-alpine, EOL since April 2026.
       #
-      # This step re-derives both numbers from the two files rather than
-      # restating either, so the gate fails on the drift itself. It asserts
-      # each side is non-empty and single-valued FIRST: two empty strings
-      # compare equal, and a mixed-version workflow would otherwise collapse
-      # to one value under `sort -u` and pass.
-      - name: Assert the Dockerfile runtime matches this workflow's Node major
-        run: |
-          CI_MAJOR="$(sed -n 's/^ *node-version: *\([0-9][0-9]*\).*/\1/p' .github/workflows/ci.yml | sort -u)"
-          IMG_MAJOR="$(sed -n 's/^FROM node:\([0-9][0-9]*\)-alpine.*/\1/p' Dockerfile | sort -u)"
-          echo "ci.yml node-version: ${CI_MAJOR:-<none>}"
-          echo "Dockerfile FROM:     ${IMG_MAJOR:-<none>}"
-          for pair in "ci.yml:$CI_MAJOR" "Dockerfile:$IMG_MAJOR"; do
-            name="${pair%%:*}"; value="${pair#*:}"
-            if [ -z "$value" ]; then
-              echo "::error::found no Node major in ${name} — this gate's parser is broken, not the versions"
-              exit 1
-            fi
-            if [ "$(printf '%s\n' "$value" | wc -l)" -ne 1 ]; then
-              echo "::error::${name} names more than one Node major: $(printf '%s' "$value" | tr '\n' ' ')"
-              exit 1
-            fi
-          done
-          if [ "$CI_MAJOR" != "$IMG_MAJOR" ]; then
-            echo "::error::CI tests on Node ${CI_MAJOR} but the image ships Node ${IMG_MAJOR}. Move both, or neither."
-            exit 1
-          fi
+      # The file-vs-file half of that gate lives in `ci-claims.test.ts`
+      # ("Every artifact names the same Node major"), where it also runs
+      # locally and names the offending file. Deliberately not repeated here:
+      # a restated check is a second thing to decay, not a second check. What
+      # is left in this job is only what a unit test structurally cannot do —
+      # build the image and run what is inside it.
 
       - name: Build the image
         run: docker build -t sr-truenas-mcp:ci .
