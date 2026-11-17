@@ -702,7 +702,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "disk_smart_test_run",
-    "Run a SMART test on one or more disks. Returns a job ID for the test.",
+    "UNAVAILABLE on this API: the TrueNAS WebSocket API exposes no method to start a SMART test, so this action starts nothing and returns an explanation. Read results with disk_smart_test_list; start a test from the TrueNAS web UI.",
     {
       disks: z.array(z.string()).describe("Array of disk device names to test, e.g. ['sda', 'sdb']"),
       type: z.enum(["LONG", "SHORT", "CONVEYANCE", "OFFLINE"]).describe("Type of SMART test to run"),

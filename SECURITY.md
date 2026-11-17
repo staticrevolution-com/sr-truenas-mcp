@@ -95,14 +95,24 @@ without a coordination window.
 
 | Version | Supported |
 |---|---|
-| 1.0.x | ✅ Active |
+| **1.4.x** | ✅ Active |
+| 1.1.x – 1.3.x | ❌ Superseded; fixes only if trivially backportable |
+| 1.0.0 | ❌ End of life |
+| 1.0.1 | ⚠ **Withdrawn** — never use; superseded by 1.1.1 |
 | < 1.0 | ❌ Pre-release; not supported |
 
-`1.0.x` is the first public release line and is actively maintained.
-When a future minor version (`1.1.x`, `1.2.x`, …) ships, the prior
-minor will receive security fixes only on a best-effort basis, and
-only if the fix is reasonably backportable. This table will be
-updated when that happens.
+Only the **current minor line** is actively maintained. An older
+minor receives a security fix only where it is reasonably
+backportable, so the supported answer to any advisory is to move to
+the latest release.
+
+⚠ `1.0.1` was **withdrawn**: it was renumbered to `1.1.1` to sort
+above an orphaned `:v1.1.0` image, and its GHCR tag was deleted on
+2026-06-13. Treat any artifact claiming `1.0.1` as unsupported
+regardless of this table.
+
+The active line in this table is asserted against `package.json` by
+the test suite, so it cannot silently fall behind a release.
 
 ## Architectural notes for security researchers
 

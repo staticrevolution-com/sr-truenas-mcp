@@ -6,6 +6,18 @@ A tracking note (predates GitHub Issues being enabled on this repo, 2026-08-21).
 planning `sr-mcp-gateway` — the standalone MCP gateway that has since replaced `sr-agentgateway`
 in production. No change is committed here; this is the analysis and the recommended position.
 
+> ⚠ **Read this as a dated document; its body is deliberately unedited.**
+> Every "270" below is the surface **as of 2026-05-18**; the dispatcher
+> registers **276** today, and the count is asserted against `src/` elsewhere
+> in this repo. Nothing in the argument turns on the exact figure.
+>
+> One premise is worth re-checking rather than inheriting: §2 argues that a
+> single tool makes a per-token grant all-or-nothing by tool name. The gateway
+> has since gained finer controls than tool-name allowlisting, so **verify what
+> it enforces today before citing that paragraph** — if a narrower grant is now
+> expressible, the strongest argument against the dispatcher is weaker than it
+> reads here. The recommended position has not been re-derived against that.
+
 ## The question
 
 `sr-truenas-mcp` exposes **one** MCP tool — `truenas` — a dispatcher whose `category` / `action` /

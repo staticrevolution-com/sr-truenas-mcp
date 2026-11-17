@@ -25,7 +25,7 @@ for the full framing.
 flowchart TD
     LLM["LLM client<br/>(Claude Code, Claude Desktop, etc.)"]
     MCP["MCP transport<br/>(stdio JSON-RPC 2.0)"]
-    Tool["Single tool: <code>truenas</code><br/>3 modes: list_categories / list_actions / execute"]
+    Tool["Single tool: <code>truenas</code><br/>3 modes, selected by which args are present"]
     Reg["ToolRegistry<br/>(src/registry.ts)"]
     Safety["Safety tier check<br/>(src/safety.ts)"]
     Schema["Zod schema validation"]
@@ -181,13 +181,15 @@ class disappeared entirely.
 
 ## The MCP tool surface
 
-Only one tool is registered: `truenas`. Its three modes:
+Only one tool is registered: `truenas`. Its three modes are **not** a
+`mode` parameter — there is no such field in the schema. The mode is
+implied by which of `category` and `action` the caller supplies:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> ListCategories: mode = "list_categories"
-    [*] --> ListActions: mode = "list_actions" + category
-    [*] --> Execute: mode = "execute" + category + action + params
+    [*] --> ListCategories: no args, or category = "help"
+    [*] --> ListActions: category only
+    [*] --> Execute: category + action (+ params)
 
     ListCategories --> [*]: returns 17 category names + descriptions
     ListActions --> [*]: returns actions in category + tier markers

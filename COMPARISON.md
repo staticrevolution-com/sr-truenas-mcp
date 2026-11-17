@@ -37,7 +37,7 @@ A short version suitable for the README:
 |---|---|---|---|
 | **Language / runtime** | TypeScript (Node.js 26, ~78MB single-file Linux binary) | TypeScript (Node.js) | Go (cross-platform binaries) |
 | **Transport** | WebSocket (`wss://`, JSON-RPC 2.0 / DDP) | REST (`https://`, Bearer token) | WebSocket (`wss://` only — `ws://` revokes the API key) |
-| **Action coverage** | 270 actions, 17 categories | ~278 actions, 18 categories | 52 tools, flat |
+| **Action coverage** | **276 actions**, **17 categories** | ~278 actions, 18 categories | 52 tools, flat |
 | **MCP tool model** | Single hierarchical `truenas` tool with discovery modes | Single hierarchical `truenas` tool with discovery modes | 52 separate MCP tools (flat `tools/list`) |
 | **ZFS dataset ops** | Create, delete, update, snapshot CRUD, rollback, set-properties, permissions, ACLs | Create, delete, update, snapshot CRUD, rollback (verify per-action) | `create_dataset` and `query_datasets` only |
 | **Replication / cloud sync / cloud backup** | Yes | Yes | None |
@@ -48,7 +48,7 @@ A short version suitable for the README:
 | **Tests** | Vitest, **23 test files** | None | 27 (Go test), 6 test files |
 | **CI** | Yes (build + test + audit) | None | Yes (build + test + cross-platform release) |
 | **License** | PolyForm Noncommercial 1.0.0 (source-available, free for non-commercial use) | MIT | GPL-3.0 |
-| **Status** | Released — v1.0.0 | Single-shot publication (2 commits, 2026-03-31) | "Research Preview — not recommended for production use" |
+| **Status** | Released — v1.4.3 | Single-shot publication (2 commits, 2026-03-31) | "Research Preview — not recommended for production use" |
 
 **When to choose which:**
 
@@ -105,7 +105,7 @@ test coverage, and ongoing maintenance.
 ### What was inherited
 
 - Single-tool / hierarchical-discovery architecture. The `tools/list` MCP
-  response contains one entry, not 270+. Action discovery happens at runtime
+  response contains one entry, not hundreds. Action discovery happens at runtime
   via the `truenas` tool's `mode: "list"` calls. This avoids loading the full
   schema surface into the model's context on every turn.
 - Module structure under `src/tools/`.
@@ -265,7 +265,7 @@ tool enumeration:
 - **Share update or deletion.** Only `create_smb_share` and `create_nfs_share`;
   no edit or delete.
 
-This is a 52-vs-270 functional-coverage delta. The official version is
+This is a 52-vs-276 functional-coverage delta. The official version is
 intentionally narrow ("we picked the things you most often ask Claude to help
 with"); sr-truenas-mcp is intentionally exhaustive and adds the safety surface
 to make exhaustiveness manageable.

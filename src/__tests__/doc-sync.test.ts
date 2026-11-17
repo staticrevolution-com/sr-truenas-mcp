@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildRegistry } from "../tools/index.js";
 
 /**
  * Doc-sync drift gate (B7) — fails CI if CLAUDE.md numerical claims don't
@@ -270,5 +271,279 @@ describe("Test-suite claims in the docs", () => {
       expect(hits, `${name} states a per-test count (${hits.join(", ")}) that no gate can check — state test files instead, or drop the number`)
         .toEqual([]);
     }
+  });
+});
+
+/**
+ * The ungated documents, 2026-11-17.
+ *
+ * `CLAUDE.md`'s numbers were gated (above) and were right. Every document
+ * that was NOT gated had drifted, and the gap between the two is the whole
+ * argument for this block:
+ *
+ *   - `README.md` claimed tier 2 = 81 and tier 3 = 169 against 95 and 161;
+ *     listed 8 tier-0 actions while naming 7 and omitting `system_config_upload`;
+ *     and carried a category table with an invented "Replication" category, no
+ *     `service_config` row at all, and pool `import`/`destroy` actions that do
+ *     not exist.
+ *   - `COMPARISON.md` and `docs/` said 270 actions; the dispatcher registers 276.
+ *   - `SECURITY.md` listed `1.0.x` as the actively supported line, four minors
+ *     later. That one is not cosmetic: a reader on 1.0.0 would conclude they
+ *     were covered.
+ *   - `src/index.ts` reported `version: "1.1.2"` in the MCP handshake, which is
+ *     what every connecting client is told the server is.
+ *
+ * 🔑 These gates derive from the registry the dispatcher actually builds, not
+ * from a second list of what we believe it contains. A table of category names
+ * checked against another table of category names would just be two things to
+ * decay.
+ */
+describe("Previously ungated doc claims", () => {
+  const registry = buildRegistry({
+    call: async () => null,
+  } as unknown as Parameters<typeof buildRegistry>[0]);
+
+  const pkg = JSON.parse(read(resolve(REPO, "package.json"))) as { version: string };
+  const readme = read(resolve(REPO, "README.md"));
+  const comparison = read(resolve(REPO, "COMPARISON.md"));
+  const security = read(resolve(REPO, "SECURITY.md"));
+  const indexTs = read(resolve(SRC, "index.ts"));
+
+  const perCategory = new Map<string, number>();
+  for (const tool of registry.tools.values()) {
+    perCategory.set(tool.category, (perCategory.get(tool.category) ?? 0) + 1);
+  }
+
+  it("the registry is populated, so the comparisons below are not over an empty set", () => {
+    expect(registry.tools.size).toBeGreaterThan(100);
+    expect(perCategory.size).toBeGreaterThan(5);
+  });
+
+  describe("README safety tiers", () => {
+    const tiers = tierCounts(safetyText);
+    const claims: Array<[string, RegExp, number]> = [
+      ["tier 0", /\*\*Tier 0 — never register\.\*\* (\d+) actions/, tiers.Blocked],
+      ["tier 1", /\*\*Tier 1 — confirm \+ reason\.\*\* (\d+) actions/, tiers.ConfirmWithReason],
+      ["tier 2", /\*\*Tier 2 — confirm\.\*\* (\d+) actions/, tiers.Confirm],
+      ["tier 3", /\*\*Tier 3 — open\.\*\* (\d+) actions/, tiers.Open],
+    ];
+
+    it.each(claims)("README's %s count matches src/safety.ts", (_name, re, actual) => {
+      const m = readme.match(re);
+      expect(m, `README no longer states this tier count in the expected shape`).not.toBeNull();
+      expect(Number(m![1])).toBe(actual);
+    });
+
+    it("README names every tier-0 action, not just most of them", () => {
+      // The original sentence read "reboot, shutdown, the raw-API escape
+      // hatch, cron and init/shutdown script creation" — 8 claimed, 7
+      // described, and the two *_update actions invisible. A count alone
+      // cannot catch that, so this asserts the names.
+      const blocked = [...safetyText.matchAll(/^\s*(\w+): SafetyTier\.Blocked,/gm)].map((m) => m[1]);
+      expect(blocked.length).toBe(tiers.Blocked);
+      const section = readme.slice(
+        readme.indexOf("**Tier 0 — never register.**"),
+        readme.indexOf("**Tier 1 — confirm + reason.**"),
+      );
+      expect(section.length).toBeGreaterThan(50);
+      for (const name of blocked) {
+        expect(section, `README's tier-0 paragraph does not name ${name}`).toContain(name);
+      }
+    });
+  });
+
+  describe("README category table", () => {
+    // Rows look like: | `storage` (34) | ... |
+    const rows = [...readme.matchAll(/^\| `([a-z_]+)` \((\d+)\) \|/gm)].map(
+      (m) => [m[1], Number(m[2])] as const,
+    );
+
+    it("the table parses, so the assertions below have rows to check", () => {
+      expect(rows.length).toBeGreaterThan(5);
+    });
+
+    it("names exactly the categories the dispatcher registers", () => {
+      expect([...rows.map(([c]) => c)].sort()).toEqual([...perCategory.keys()].sort());
+    });
+
+    it.each(rows)("the `%s` row's count matches the registry", (cat, claimed) => {
+      expect(claimed).toBe(perCategory.get(cat));
+    });
+
+    it("the row counts sum to the registered total", () => {
+      // Catches a row that is individually right while the table as a whole
+      // has gained or lost one.
+      expect(rows.reduce((a, [, n]) => a + n, 0)).toBe(registry.tools.size);
+    });
+  });
+
+  describe("Action and category totals outside CLAUDE.md", () => {
+    it.each([
+      ["README.md", readme],
+      ["COMPARISON.md", comparison],
+    ])("%s's bolded action count matches the registry", (_name, text) => {
+      const m = [...text.matchAll(/\*\*(\d+) actions\*\*/g)].map((x) => Number(x[1]));
+      const plain = [...text.matchAll(/^(\d+) actions across (\d+) categories/gm)].map((x) => [
+        Number(x[1]),
+        Number(x[2]),
+      ]);
+      expect(m.length + plain.length, "no action count found").toBeGreaterThan(0);
+      for (const n of m) expect(n).toBe(registry.tools.size);
+      for (const [actions, cats] of plain) {
+        expect(actions).toBe(registry.tools.size);
+        expect(cats).toBe(perCategory.size);
+      }
+    });
+
+    it("COMPARISON's bolded category count matches the registry", () => {
+      const m = comparison.match(/\*\*(\d+) categories\*\*/);
+      expect(m, "COMPARISON states no bolded category count").not.toBeNull();
+      expect(Number(m![1])).toBe(perCategory.size);
+    });
+  });
+
+  describe("Version claims", () => {
+    it("src/index.ts reports package.json's version in the MCP handshake", () => {
+      const m = indexTs.match(/version:\s*"([^"]+)"/);
+      expect(m, "src/index.ts no longer declares a version literal").not.toBeNull();
+      expect(m![1]).toBe(pkg.version);
+    });
+
+    it("src/index.ts's server description states the registered action count", () => {
+      const m = indexTs.match(/(\d+) safety-tiered actions/);
+      expect(m, "src/index.ts no longer states an action count").not.toBeNull();
+      expect(Number(m![1])).toBe(registry.tools.size);
+    });
+
+    it.each([
+      ["README.md", readme, /\| \*\*Status\*\* \| v([0-9.]+) \|/],
+      ["COMPARISON.md", comparison, /\| \*\*Status\*\* \| Released — v([0-9.]+) \|/],
+    ])("%s's status row names the current version", (_name, text, re) => {
+      const m = text.match(re);
+      expect(m, "status row not found in the expected shape").not.toBeNull();
+      expect(m![1]).toBe(pkg.version);
+    });
+
+    it("SECURITY.md's actively supported line is the current minor", () => {
+      // A stale supported-versions table tells a reader on an old release
+      // that they are covered. Derive the line from package.json.
+      const minor = pkg.version.split(".").slice(0, 2).join(".");
+      const m = security.match(/\| \*\*(\d+\.\d+)\.x\*\* \| ✅ Active \|/);
+      expect(m, "SECURITY.md has no bolded active line in the expected shape").not.toBeNull();
+      expect(m![1]).toBe(minor);
+    });
+
+    it("the newest CHANGELOG version heading is the current version", () => {
+      // The inverse — a release with no CHANGELOG section — is asserted by
+      // release.yml, where the tag exists. This catches a section with no
+      // release, which is how [1.3.1] sat untagged between v1.3.0 and v1.4.0.
+      const headings = [...read(resolve(REPO, "CHANGELOG.md")).matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)]
+        .map((m) => m[1]);
+      expect(headings.length).toBeGreaterThan(1);
+      expect(headings[0]).toBe(pkg.version);
+    });
+  });
+
+  it("no document links into a sibling repo checkout", () => {
+    // `../sr-mcp-gateway/docs/CONFIGURATION.md` resolved in a local clone and
+    // 404'd for every reader of this public repo — and the target repo is
+    // private, so there is no public URL to fix it to.
+    const docs = [
+      ["README.md", readme],
+      ["CLAUDE.md", claudeMd],
+      ["COMPARISON.md", comparison],
+      ["SECURITY.md", security],
+      ...readdirSync(resolve(REPO, "docs"))
+        .filter((f) => f.endsWith(".md"))
+        .map((f) => [`docs/${f}`, read(resolve(REPO, "docs", f))] as [string, string]),
+    ] as Array<[string, string]>;
+    expect(docs.length).toBeGreaterThan(4);
+    // Positive control: the pattern must match the form that was there.
+    expect("see [x](../sr-mcp-gateway/docs/CONFIGURATION.md)").toMatch(/\]\(\.\.\/sr-[a-z-]+\//);
+    for (const [name, text] of docs) {
+      expect(text.length, `${name} read as empty`).toBeGreaterThan(0);
+      const hits = [...text.matchAll(/\]\(\.\.\/sr-[a-z-]+\/[^)]*\)/g)].map((m) => m[0]);
+      expect(hits, `${name} links into a sibling repo checkout: ${hits.join(", ")}`).toEqual([]);
+    }
+  });
+});
+
+/**
+ * Two claims the test-count gate could not see.
+ *
+ * ⚠ The gate added with that block matched `/\b\d+ tests\b/`, and README's
+ * comparison table states ours as a bare figure in a `Tests / CI` row —
+ * `| **Tests / CI** | 226 / yes | 0 / no | 27 / yes |`. No word "tests", so
+ * the gate read clean over a number stale by 150. The lesson is the same one
+ * the bold-marker scoping taught: a pattern written for the phrasing you
+ * remember misses the phrasing you used somewhere else.
+ *
+ * Scoping matters here for the same reason — the other two cells are OTHER
+ * projects' counts, measured once and correct as dated facts. Only our cell
+ * is checked, and it is identified structurally (the first data cell), not by
+ * hoping a regex tells the columns apart.
+ */
+describe("The comparison table's own-project test cell", () => {
+  const readme = read(resolve(REPO, "README.md"));
+  const testFiles = readdirSync(resolve(SRC, "__tests__")).filter((f) => f.endsWith(".test.ts"));
+
+  const row = readme.split("\n").find((l) => /^\| \*\*Tests \/ CI\*\* \|/.test(l));
+
+  it("finds the row it is checking", () => {
+    expect(row, "README has no `Tests / CI` comparison row").toBeDefined();
+    expect(testFiles.length).toBeGreaterThan(0);
+  });
+
+  it("states no figure in our cell that is not the test-file count", () => {
+    const cells = row!.split("|").map((c) => c.trim());
+    // cells[0] is empty (leading pipe), [1] is the row label, [2] is ours.
+    const ours = cells[2];
+    expect(ours, "our cell is empty").toBeTruthy();
+    const numbers = [...ours.matchAll(/\d+/g)].map((m) => Number(m[0]));
+    expect(numbers.length, `our cell states no figure at all: ${ours}`).toBeGreaterThan(0);
+    for (const n of numbers) {
+      expect(
+        n,
+        `our Tests/CI cell says ${n}; the only checkable figure is the test-file count (${testFiles.length}). A per-test total cannot be re-derived here — see the block above.`,
+      ).toBe(testFiles.length);
+    }
+    // The other projects' cells are dated measurements of someone else's
+    // repo and are deliberately not touched.
+    expect(cells[3]).toContain("0");
+    expect(cells[4]).toContain("27");
+  });
+});
+
+/**
+ * The plans layout, per the house convention: two index files that are the
+ * source of truth for status, and detail plans linked from them.
+ */
+describe("plans/ layout", () => {
+  const PLANS = resolve(REPO, "plans");
+  const entryRe = /^- \[([ x~-])\] (.+)$/gm;
+
+  const indexes = ["OPEN-PLAN.md", "ROADMAP.md"];
+
+  it.each(indexes)("plans/%s exists and its entries parse", (name) => {
+    const text = read(resolve(PLANS, name));
+    const entries = [...text.matchAll(entryRe)];
+    expect(entries.length, `${name} has no \`- [m] text\` entries`).toBeGreaterThan(0);
+  });
+
+  it("every detail plan is linked from exactly one index entry", () => {
+    const details = readdirSync(PLANS).filter((f) => f.endsWith(".md") && !indexes.includes(f));
+    expect(details.length, "no detail plans found").toBeGreaterThan(0);
+    const entryText = indexes
+      .flatMap((n) => [...read(resolve(PLANS, n)).matchAll(entryRe)].map((m) => m[2]))
+      .join("\n");
+    for (const f of details) {
+      const refs = entryText.split("\n").filter((line) => line.includes(f));
+      expect(refs.length, `plans/${f} is linked from ${refs.length} index entries, want 1`).toBe(1);
+    }
+  });
+
+  it("no plan file is left at the repo root", () => {
+    const stray = readdirSync(REPO).filter((f) => /^PLAN.*\.md$/.test(f));
+    expect(stray).toEqual([]);
   });
 });

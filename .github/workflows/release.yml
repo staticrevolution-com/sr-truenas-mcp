@@ -51,6 +51,21 @@ jobs:
             exit 1
           fi
           echo "package.json ${PKG} matches tag ${TAG}"
+      - name: Assert the CHANGELOG has a section for this release
+        # The inverse of the version assertion above, and the one that was
+        # missing: [1.3.1] sat in CHANGELOG.md between v1.3.0 and v1.4.0 with
+        # no tag and no release ever cut for it. The test suite catches a
+        # section with no release (newest heading == package.json); only here,
+        # where the tag exists, can we catch a release with no section.
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VER="${TAG#v}"
+          if ! grep -qF "## [${VER}]" CHANGELOG.md; then
+            echo "::error::no '## [${VER}]' section in CHANGELOG.md. Add the entry before publishing ${TAG}."
+            exit 1
+          fi
+          echo "CHANGELOG.md has a section for ${VER}"
       - run: npm ci
       - run: npm run build
       - run: npm test

@@ -7,7 +7,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`disk_smart_test_run` told the model it returns a job ID. It starts
+  nothing.** The handler never reaches the middleware — the WebSocket API has
+  no method to begin a SMART test — so it returned an explanation while its
+  description read "Returns a job ID for the test." Of everything in this
+  release that was inaccurate, this was the only line an LLM reads *as an
+  instruction*, and it invites a caller to poll for a job that will never
+  exist. The description now leads with `UNAVAILABLE on this API` and names
+  `disk_smart_test_list` and the web UI instead. The behaviour is unchanged;
+  the promise is.
+
+- **The MCP handshake reported `version: "1.1.2"`** from `src/index.ts`, four
+  minors behind, so every connecting client was told the wrong server version
+  while `--version` reported the right one. Now `1.4.3`, asserted against
+  `package.json`.
+
+- **`SECURITY.md` listed `1.0.x` as the actively supported line.** A reader on
+  1.0.0 would have concluded they were covered; 1.0.1 is withdrawn and the
+  current line is 1.4.x. The table now names the current minor, marks the
+  withdrawn release explicitly, and the active line is asserted against
+  `package.json`.
+
 ### Changed
+
+- **Corrected every documentation claim that had drifted from the code**, and
+  gated each one. `CLAUDE.md`'s numbers were already gated and were all
+  correct; every document that was *not* gated had drifted. That contrast is
+  the finding, not the individual numbers.
+
+  - `README.md`: tier 2 `81` → **95**, tier 3 `169` → **161**; the tier-0
+    paragraph claimed 8 actions while describing 7, omitting
+    `system_config_upload` and hiding that both the *update* halves of cron
+    and init/shutdown scripts are blocked too.
+  - `README.md`'s category table is **regenerated from the registry**. It had
+    an invented "Replication" category, no `service_config` row at all, pool
+    `import` and `destroy` actions that do not exist, and omitted
+    `filesystem_get`/`filesystem_put`/`filesystem_disk_usage`; boot
+    environments were filed under System when they live in `update`. Rows are
+    now the category keys the dispatcher accepts, with per-category counts.
+  - `README.md`: transport `(stdio/SSE)` → stdio only, which is all
+    `src/mcp-adapter.ts` imports; "REST will work for some time" → REST v2 is
+    gone, removed outright in TrueNAS 26.0.
+  - `COMPARISON.md` and `docs/`: `270` actions → **276**; status `v1.0.0` →
+    current.
+  - `docs/ARCHITECTURE.md` documented a `mode` parameter the tool has never
+    had — the three modes are implied by which of `category` and `action` are
+    supplied.
+  - `docs/INSTALL.md` expected `1.0.0` from `--version` and pinned examples to
+    `:v1.0.0`; `docs/FIELD-REPORT-2026-08-21` called bug 2 unreleased when it
+    shipped in 1.2.1; `CLAUDE.md` called that whole report open with no fixes
+    landed, three months after all three shipped.
+  - `CLAUDE.md` linked to `../sr-mcp-gateway/docs/*.md`, which resolves only in
+    a local sibling checkout and 404s for every reader of this public repo.
+
+- **`docs/TOOL-SURFACE-EVALUATION.md` is marked as dated rather than
+  rewritten.** Its body keeps the 2026-05-18 figures. ⚠ The note also flags
+  that its central argument — that one dispatcher tool makes a per-token grant
+  all-or-nothing — predates the gateway gaining finer-grained controls, so the
+  recommendation should be re-derived before being cited.
+
+- **`[1.3.1]` is marked as never released.** There is no `v1.3.1` tag and no
+  such release; tags go `v1.3.0` → `v1.4.0`, and that content reached users as
+  v1.4.0 a day later. The section is kept rather than folded into 1.4.0,
+  because its dates and issue numbers are the record of what happened. No tag
+  was created to match it — that is the maintainer's call, and a tag minted now
+  would claim a release date it never had.
+
+- **The plan documents moved into `plans/`**, with `plans/OPEN-PLAN.md` and
+  `plans/ROADMAP.md` as the status source of truth, per the house convention.
+  Markers are set from current state — merged PRs and what is deployed — not
+  from a plan's own header, which is what it believed when written.
+
+### Added
+
+- **Gates for all of the above**, extending `doc-sync.test.ts` from `CLAUDE.md`
+  to `README.md`, `COMPARISON.md`, `SECURITY.md`, `docs/` and `src/index.ts`.
+  They derive from **the registry the dispatcher actually builds** rather than
+  from a second list of what we believe it contains: a table of category names
+  checked against another table of category names would be two things to decay.
+  Covered: the four tier counts, the tier-0 action *names*, the category table
+  (names, per-category counts, and that they sum to the total), action and
+  category totals, the three version claims, `SECURITY.md`'s active line, the
+  newest CHANGELOG heading, and that no document links into a sibling repo
+  checkout.
+
+  Every gate asserts its own input is non-empty first, and the two negative
+  assertions carry inline positive controls.
+
+- **A release-time assertion that the CHANGELOG has a section for the version
+  being published** — the inverse of the existing tag-vs-`package.json` check,
+  and the one that was missing. A section with no release is caught by the
+  suite; only at release time, where the tag exists, can a release with no
+  section be caught.
+
+- **A fix to the test-count gate added last release.** It matched
+  `/\b\d+ tests\b/` and so read clean over `README.md`'s comparison row,
+  `| **Tests / CI** | 226 / yes | …`, which states the figure with no word
+  "tests" — stale by 150. The row's own-project cell is now identified
+  structurally rather than by hoping a regex can tell the columns apart; the
+  other two cells are other projects' dated measurements and stay untouched.
+
 
 - **The docs no longer state a per-test count, because nothing could
   re-derive one.** `CLAUDE.md` said "272 tests" against a suite of 378;
@@ -620,7 +721,22 @@ credential's jobs, not the caller's. Adding it safely means a field allowlist
 projected in the handler, gated by a test asserting the projection is closed.
 Recorded rather than quietly attempted.
 
-## [1.3.1] — 2026-09-25
+## [1.3.1] — 2026-09-25 — *never released; its content shipped in [1.4.0]*
+
+⚠ **There is no `v1.3.1` tag and no `v1.3.1` release.** Tags go
+`v1.3.0` → `v1.4.0`, so this section describes work that reached users
+under the **v1.4.0** release of 2026-09-26, one day later. The heading is
+kept rather than folded into 1.4.0 because the dates, the issue numbers
+and the advisory detail below are the record of what happened on
+2026-09-25; renaming it would make that record harder to follow, not
+easier. No tag is being created to match it — tagging is the
+maintainer's call, and a tag minted now would claim a release date it
+never had.
+
+`release.yml` now asserts that the version being published has a
+CHANGELOG section, which catches the inverse of this (a release with no
+entry). A section with no release is caught by the test suite, which
+requires the newest version heading to match `package.json`.
 
 Dependency security. No action-surface change; no behaviour change to any
 TrueNAS call.
@@ -1140,8 +1256,8 @@ independently for this repository. Architecture and module layout under
 `src/tools/` are inherited from upstream.
 
 The development log of the work that became this release is preserved in
-[`PLAN-v1.0.0.md`](./PLAN-v1.0.0.md) (initial hardening) and
-[`PLAN-bulletproofing-v1.0.1-v1.1.0.md`](./PLAN-bulletproofing-v1.0.1-v1.1.0.md)
+[`PLAN-v1.0.0.md`](./plans/PLAN-v1.0.0.md) (initial hardening) and
+[`PLAN-bulletproofing-v1.0.1-v1.1.0.md`](./plans/PLAN-bulletproofing-v1.0.1-v1.1.0.md)
 (reliability + spec-alignment phases). Internal pre-release tags
 `v1.0.0`, `v1.0.1`, and `v1.1.0` were consolidated into this single public
 release on 2026-05-01.
