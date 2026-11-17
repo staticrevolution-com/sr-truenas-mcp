@@ -63,25 +63,29 @@ and dataset-name validation, and wrote a test suite. See
 is documented at runtime via the `truenas` tool's discovery modes; the
 short version:
 
-| Category | Coverage |
+| Category (count) | Coverage |
 |---|---|
-| **Storage** | Pool create/destroy/import/export/replace/scrub. Dataset CRUD, snapshot CRUD, snapshot tasks, encryption (lock/unlock/key), quotas, permissions, promote |
-| **Sharing** | SMB / NFS / iSCSI shares — full CRUD on shares, targets, extents, portals, initiators, target-extent mappings |
-| **Filesystem** | `stat`, `listdir`, `mkdir`, `chown`, set-permissions (POSIX), set-ACL (NFSv4), get-ACL |
-| **System** | Service start/stop/restart/control, `system.info`, system_general config, NTP, mail, API keys, boot environments |
-| **Network** | Interface CRUD, static routes, network configuration, commit/rollback staged changes |
-| **Account** | User CRUD, group CRUD, privilege CRUD, set-password |
-| **Apps** | Install / start / stop / upgrade / delete, app catalog, Docker config |
-| **VMs** | VM CRUD, device CRUD, start/stop/restart |
-| **Replication** | Replication tasks, cloud sync, cloud backup, rsync tasks |
-| **Data protection** | Periodic snapshot tasks |
-| **Disks** | Query, wipe, SMART results (initiation not exposed via WS API) |
-| **Certificates** | Certificate CRUD, ACME, DNS authenticators |
-| **Directory services** | Status, configure, leave, refresh cache |
-| **Reporting** | System / network / disk / ARC metrics |
-| **Update** | Check, download, apply system updates |
-| **Alerts** | Query, dismiss, restore alerts; alert-service CRUD |
-| **Audit** | Query audit logs |
+| `storage` (34) | Pools — create, export, update, status, scrub, replace a disk, attachments, member disks. Datasets — CRUD, promote, quotas, permissions, lock/unlock plus encryption summary, and a raw `zfs_query` for the subtrees `pool.dataset.query` hides. Snapshots — create, delete, get, list, clone, rollback. Periodic snapshot tasks — CRUD plus run-on-demand |
+| `data_protection` (45) | Replication tasks (CRUD, run, restore), cloud sync (CRUD, run, abort, restore, credentials, bucket and directory listing, providers), cloud backup (CRUD, run, abort, snapshots), rsync tasks (CRUD, run), SSH keychain credentials, and list/delete/run for the cron and init/shutdown scripts whose *creation* is tier 0 |
+| `sharing` (36) | SMB, NFS and iSCSI — share CRUD and per-protocol config, plus iSCSI targets, extents, portals, initiators, target-extent mappings and live sessions |
+| `filesystem` (10) | File **content** read and write (`filesystem_get` / `filesystem_put`, over HTTPS rather than the WebSocket), `stat`, `listdir`, `mkdir`, `chown`, bounded recursive `disk_usage`, POSIX permissions, and NFSv4 ACL get/set |
+| `system` (22) | `system_info`, version (and this server's own build version), general and advanced config, services (start/stop/restart/update), NTP servers, mail config and send, API keys, and config **download** (config *upload* is tier 0) |
+| `update` (14) | Update check, download, apply, config — and **boot environments** (create, activate, delete, keep, list) plus boot-pool state, attach, detach and scrub |
+| `network` (15) | Interface CRUD, global config, static routes, IPMI info, a summary view, and the staged-change lifecycle: commit, check-in, rollback |
+| `account` (16) | User CRUD, set-password, shell choices; group CRUD; privilege/role CRUD |
+| `app` (17) | App CRUD, start/stop, upgrade, rollback, redeploy, image pull and outdated-image check, the available-app catalog and categories, and Docker runtime config/status |
+| `vm` (16) | VM CRUD, clone, start/stop/restart, status, available memory, display URI, and device CRUD |
+| `disk` (7) | Query, get, update, wipe, temperatures, SMART **results**. `disk_smart_test_run` is registered but cannot start a test — see Known Limitations |
+| `certificate` (8) | Certificate create/delete/get/list, ACME server list, ACME DNS-authenticator create/delete/list |
+| `directory` (8) | Directory-services status, config, update, leave, cache refresh; Kerberos config, realms, keytabs |
+| `service_config` (12) | Per-service config read/update for SSH, FTP, SNMP and UPS, plus system tunable CRUD |
+| `reporting` (3) | Reporting config, the available graph list, and time-series data |
+| `alert` (10) | Alert list, dismiss, restore, categories, policies; alert-service CRUD and test |
+| `audit` (3) | Audit log query, audit config read and update |
+
+Category names are the ones the dispatcher accepts, and the counts are what
+it registers — both are asserted against `src/` by the test suite, so this
+table cannot drift from the code without CI failing.
 
 Compare against [`docs/full-features.md` in `truenas/truenas-mcp`](https://github.com/truenas/truenas-mcp/blob/main/docs/full-features.md)
 for the official Research Preview's narrower surface.
@@ -180,7 +184,7 @@ filtering.
 ```
                 ┌────────────────────────────────────────┐
 LLM client ───► │  MCP tool: truenas                     │
-(stdio/SSE)     │                                        │
+(stdio)         │                                        │
                 │  modes:                                │
                 │    "list_categories" → 17 categories   │
                 │    "list_actions"    → tier-tagged     │
@@ -215,7 +219,8 @@ Modern TrueNAS docs are 100% WebSocket JSON-RPC 2.0 — the REST API v2.0
 that spranab's project used isn't documented in the current TrueNAS
 manual. The official `truenas/truenas-mcp` from iXsystems is also
 WebSocket-only and explicitly refuses unencrypted `ws://`. That's the
-direction signal. REST will work for some time but is on borrowed time.
+direction signal. REST v2 is now gone: TrueNAS 26.0 removed `/api/v2.0/*`
+entirely, so a REST client does not degrade there — it 404s.
 
 The migration also eliminated a class of bugs: REST passed dataset and
 pool IDs as URL path segments, which require URL-encoding. WebSocket
@@ -230,10 +235,16 @@ needs an explicit human reason because mistakes are not recoverable
 within the session. Most reads need no gate at all. The four tiers
 map cleanly:
 
-- **Tier 0 — never register.** 8 actions: reboot, shutdown, the raw-API
-  escape hatch, cron and init/shutdown script creation. These cannot
-  be made safe within an MCP session and the only correct answer is
-  "do this through TrueNAS directly."
+- **Tier 0 — never register.** 8 actions: `system_reboot`,
+  `system_shutdown`, `system_config_upload` (restores a whole
+  configuration database, including credentials), `truenas_api_call`
+  (the raw-API escape hatch), and both the create *and* update halves
+  of cron and init/shutdown scripts — `cronjob_create`,
+  `cronjob_update`, `initshutdown_create`, `initshutdown_update`,
+  because editing an existing script is arbitrary code execution by
+  the same route as adding one. These cannot be made safe within an
+  MCP session and the only correct answer is "do this through TrueNAS
+  directly.""
 - **Tier 1 — confirm + reason.** 20 actions. `pool_export`,
   `disk_wipe`, `dataset_delete`, `snapshot_rollback`, `update_apply`,
   `bootenv_activate`, `system_config_download` (returns secret seed +
@@ -241,11 +252,11 @@ map cleanly:
   the box). Two-call confirmation: first call returns a structured
   warning describing exactly what's about to happen; second call with
   `confirm: true` and a `reason` string actually runs it.
-- **Tier 2 — confirm.** 81 actions. Service stop/restart, snapshot
+- **Tier 2 — confirm.** 95 actions. Service stop/restart, snapshot
   delete, share create/delete, user/group CRUD, certificate CRUD,
   cloud sync delete, etc. Recoverable but should not happen by
   accident.
-- **Tier 3 — open.** 169 actions. All reads, all queries, safe creates
+- **Tier 3 — open.** 161 actions. All reads, all queries, safe creates
   (e.g. read-only `query_filters` operations).
 
 The data lives in `src/safety.ts` and is enforced at registration. An
@@ -340,9 +351,9 @@ Short version (full detail in [`COMPARISON.md`](COMPARISON.md)):
 | **ZFS dataset ops** | Full CRUD + snapshots | Full CRUD + snapshots | `create_dataset` and `query_datasets` only |
 | **Safety model** | 4-tier, centralized | Per-handler `confirm` | Dry-run preview |
 | **Response filtering** | Centralized 3-layer | None | Per-handler hand-crafted masking |
-| **Tests / CI** | 226 / yes | 0 / no | 27 / yes |
+| **Tests / CI** | Vitest, **23 test files** / yes | 0 / no | 27 / yes |
 | **License** | PolyForm-NC 1.0.0 | MIT | GPL-3.0 |
-| **Status** | v1.1.1 | Single-shot publication (2 commits) | "Research Preview" |
+| **Status** | v1.4.3 | Single-shot publication (2 commits) | "Research Preview" |
 
 Each project optimizes for different things. The official version has
 better wizard-style UX and ships cross-platform binaries (macOS / Windows
@@ -483,7 +494,7 @@ in 16 days instead of six months.
 
 The outcome of this trade-off is auditable: the test suite is in
 `src/__tests__/`, the safety classification is a pure data file at
-`src/safety.ts`, the response filter is a 169-line pure function at
+`src/safety.ts`, the response filter is a pure function at
 `src/filters.ts`, and the CI gates are in `.github/workflows/`. None
 of those are hidden behind abstractions; a reviewer who wants to
 verify any architectural claim in this README can do so against the

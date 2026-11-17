@@ -32,7 +32,10 @@ export function createServer(config: ServerConfig): McpServer {
 
   return createMcpServer({
     name: "truenas-mcp",
-    version: "1.1.2",
+    // Asserted against package.json by the test suite — this literal is
+    // what the MCP handshake reports as serverInfo.version, so a stale
+    // one misidentifies the running server to every client.
+    version: "1.4.3",
     description:
       "Hardened MCP server for TrueNAS SCALE — 276 safety-tiered actions behind a single hierarchical interface",
     registry: buildRegistry(client),

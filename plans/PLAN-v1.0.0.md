@@ -1,6 +1,6 @@
 # sr-truenas-mcp Hardening Plan
 
-> **Historical record.** This is the pre-implementation hardening plan written before the v1.0.0 public release. Numerical claims about TrueNAS API method counts and the registered-tool count reflect what was understood at planning time; final shipped numbers are documented in [`CHANGELOG.md`](./CHANGELOG.md) and asserted in `src/__tests__/doc-sync.test.ts`. Companion document: [`PLAN-bulletproofing-v1.0.1-v1.1.0.md`](./PLAN-bulletproofing-v1.0.1-v1.1.0.md).
+> **Historical record.** This is the pre-implementation hardening plan written before the v1.0.0 public release. Numerical claims about TrueNAS API method counts and the registered-tool count reflect what was understood at planning time; final shipped numbers are documented in [`CHANGELOG.md`](../CHANGELOG.md) and asserted in `src/__tests__/doc-sync.test.ts`. Companion document: [`PLAN-bulletproofing-v1.0.1-v1.1.0.md`](./PLAN-bulletproofing-v1.0.1-v1.1.0.md).
 
 ## Context
 

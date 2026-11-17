@@ -1,6 +1,6 @@
 # Field Report — 2026-08-21: `reporting_get_data` is unusable, and the memory-diagnostics gap
 
-**Status:** **All three bugs fixed** (1 and 3 in 1.2.0, 2 unreleased); **Gaps 4 and 5 closed as not-implementable / redundant** — see below · **Origin:** a live
+**Status:** **All three bugs fixed and released** (1 and 3 in 1.2.0, 2 in 1.2.1); **Gaps 4 and 5 closed as not-implementable / redundant** — see below · **Origin:** a live
 memory-pressure investigation against a production TrueNAS **26.0.0-BETA.1**
 host, driven through a gateway-federated `sr-truenas-mcp` v1.1.1.
 
