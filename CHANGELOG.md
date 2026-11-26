@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.5.0] — 2026-11-26
+
 ### Fixed
 
 - **`dataset_delete`'s `recursive` flag destroys snapshots and leaves the
@@ -282,6 +286,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   middleware's behaviour, so the gate is on the **shape** of the claim, not its
   truth — an unscoped "this action is broken" sentence fails it
   (mutation-verified).
+
+### Dependencies
+
+- **TypeScript 7** (#40), **Vitest 5** (#47), **`@modelcontextprotocol/sdk`
+  1.32.2** (#45) and **`@yao-pkg/pkg` 6.24.0** (#46). Three of the four are
+  majors, and the build, type-check and the full suite were green on each —
+  but note what CI structurally verifies: the Vitest major is checked by the
+  suite running at all, whereas the SDK major is exercised only to the depth
+  the stdio handshake and the tool/resource registration paths reach. Nothing
+  here drives an HTTP or SSE transport, because `src/mcp-adapter.ts` imports
+  only `StdioServerTransport`.
+- `@modelcontextprotocol/sdk` 1.32.2 is, as of 2026-11-26, the **latest
+  published version** — there is no 2.x on npm, which matters because the
+  Skills-over-MCP extension needs a release that does not exist yet.
 
 ## [1.4.3] — 2026-10-25
 
