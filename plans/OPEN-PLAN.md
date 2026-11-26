@@ -11,6 +11,9 @@ own status header.
 - [ ] #28 `npm run build:binary` hangs locally — ⚠ its title overstates the release impact: v1.4.1, v1.4.2 and v1.4.3 all shipped the binary, its SHA256 and the SBOM; only v1.4.0 is missing them
 - [ ] Repoint the gateway backend so the deployed image carries the post-v1.4.3 corrections — a gateway-backend change, Warren's to make, and the reason a merged fix here is not a deployed one
 - [ ] Re-derive [`docs/TOOL-SURFACE-EVALUATION.md`](../docs/TOOL-SURFACE-EVALUATION.md)'s recommendation against what the gateway's per-token RBAC enforces today; its all-or-nothing premise predates argument constraints
+- [~] `dataset_delete`'s `recursive` trap — description and behaviour fixed together; PR open, not merged, and the deployed backend still carries the old handler
+- [ ] #58 No action can query a job: 24 actions return a job id that nothing accepts back, so every long-running job's outcome is unreachable
+- [ ] `listActions` truncates a parameter description at 97 characters, and in a single-dispatcher server that listing is the only channel for per-action params. 15 are currently cut mid-sentence, including live safety caveats on `snapshot_task_update`
 - [ ] The two deferred follow-ups from the 2026-06-12 field report: the TrueNAS 26.0 compatibility sweep, and a job-method audit across every handler
 
 ## Done and dropped

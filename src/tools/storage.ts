@@ -474,24 +474,133 @@ export function register(server: McpServer, client: TrueNASClient): void {
 
   server.tool(
     "dataset_delete",
-    "Delete a dataset (destructive — requires confirm)",
+    [
+      "Delete a dataset (destructive — requires confirm).",
+      "⚠ `recursive` does NOT mean \"delete child datasets\" here. Measured on TrueNAS 26.0-BETA.1:",
+      "on an ordinary NESTED dataset (a name containing '/'), recursive: true destroys EVERY SNAPSHOT",
+      "of the target, unmounts the filesystem, LEAVES the dataset and all of its bytes in place, and",
+      "returns true — so the call reads as a successful delete while the data is still there. The",
+      "documented \"destroy children, leave the root intact\" meaning applies to a POOL ROOT (a name with",
+      "no '/'). On a nested dataset that has snapshots this action REFUSES, reports the snapshot count,",
+      "and requires acknowledge_snapshot_destruction: true to proceed. To remove such a dataset without",
+      "destroying anything implicitly: delete its snapshots explicitly with snapshot_delete, then call",
+      "this with recursive omitted. ⚠ The middleware's own non-recursive error recommends the",
+      "destructive flag by name; do not follow it.",
+    ].join(" "),
     {
       id: z.string().describe("Dataset name/path (e.g. 'tank/data')"),
-      recursive: z.boolean().optional().describe("Recursively delete child datasets"),
+      // Kept under the discovery truncation limit on purpose: a parameter
+      // description longer than that is cut mid-sentence in listActions, which
+      // is the only channel by which a model learns this dispatcher's
+      // per-action params. The full measured behaviour is in the action
+      // description above, which is NOT truncated.
+      recursive: z
+        .boolean()
+        .optional()
+        .describe("NOT \"delete child datasets\" on a nested dataset — see this action's description first"),
       force: z.boolean().optional().describe("Force deletion"),
+      acknowledge_snapshot_destruction: z
+        .boolean()
+        .optional()
+        .describe("Affirms that destroying the target's snapshots is intended; the refusal reports the count"),
       confirm: z.boolean().describe("Must be true to confirm this destructive operation"),
     },
-    async ({ id, recursive, force, confirm }) => {
+    async ({ id, recursive, force, confirm, acknowledge_snapshot_destruction }) => {
       if (!confirm) {
         return {
           content: [{ type: "text", text: "Operation not confirmed. Set confirm to true to proceed." }],
         };
       }
+      // Validated before the name reaches a query filter below, and because
+      // this is a ZFS-side destructive handler. CLAUDE.md claims dataset-name
+      // validation on every ZFS-side handler; until this call site existed,
+      // that claim was false here.
+      const dataset = validateDatasetName(id);
+
+      // A pool root has no '/'. On a root, `recursive` carries its documented
+      // meaning (destroy children, leave the root), so it is not gated. On a
+      // nested dataset the flag's real effect is to destroy the target's
+      // snapshots and leave the dataset standing — see the parameter
+      // description. Deriving "is a root" from the name means there is no list
+      // to maintain.
+      const isPoolRoot = !dataset.includes("/");
+
+      if (recursive === true && !isPoolRoot && acknowledge_snapshot_destruction !== true) {
+        // Server-side filter: the dataset filter MUST go to the server (see
+        // snapshot_list). Scoped to the target's OWN snapshots, which is what
+        // the 26.0 measurement covers. Snapshots belonging to child datasets
+        // are not counted here and are not claimed to be.
+        const queried = await client.call("pool.snapshot.query", [
+          [["dataset", "=", dataset]],
+          {},
+        ]);
+        const snapshots = Array.isArray(queried) ? queried : queried == null ? [] : [queried];
+        if (snapshots.length > 0) {
+          const names = snapshots
+            .map((s) => (s && typeof s === "object" ? (s as Record<string, unknown>).name : undefined))
+            .filter((n): n is string => typeof n === "string");
+          return {
+            content: [
+              {
+                type: "text",
+                text: [
+                  `REFUSED: recursive deletion of "${dataset}", which has ${snapshots.length} snapshot(s).`,
+                  "",
+                  `"${dataset}" is a nested dataset, not a pool root. Measured on TrueNAS 26.0-BETA.1, recursive: true here would:`,
+                  `  - destroy all ${snapshots.length} of its snapshots,`,
+                  "  - unmount the filesystem,",
+                  "  - leave the dataset and every byte it holds in place,",
+                  "  - and return true, so the call reads as a successful delete.",
+                  "",
+                  "That is not what the flag's name describes, and it is almost certainly not what was intended.",
+                  "",
+                  "The correct procedure, which destroys nothing implicitly:",
+                  "  1. Confirm this dataset is the sole owner of those snapshots — a snapshot held by a",
+                  "     recursive periodic task may be regenerated, and a sibling dataset under the same",
+                  "     task is not evidence about this one.",
+                  "  2. Delete the snapshots explicitly with snapshot_delete, one by one, so each",
+                  "     destruction is a decision someone made.",
+                  "  3. Call dataset_delete again with recursive omitted or set to false.",
+                  "  4. Verify absence three independent ways: dataset_get returns ENOENT,",
+                  "     filesystem_stat returns ENOENT, and the parent's child listing no longer",
+                  "     mentions it. Do NOT verify by pool free space: ZFS frees asynchronously",
+                  "     (a ~56 GiB destroy settled roughly two minutes later), and below ~1 GB the",
+                  "     figure drifts between reads from other activity, so it is not a gate.",
+                  "     pool.dataset.delete is not a job, so there is no job id to poll.",
+                  "",
+                  "If destroying those snapshots IS the intent, pass acknowledge_snapshot_destruction: true",
+                  "alongside the flag you already set. Do not set it on the strength of this message alone:",
+                  "the snapshot count above belongs in front of the person who owns the data.",
+                  "",
+                  "Snapshots that would be destroyed:",
+                  ...(names.length > 0
+                    ? names.map((n) => `  ${n}`)
+                    : ["  (names unavailable; the count above is from the server)"]),
+                ].join("\n"),
+              },
+            ],
+          };
+        }
+      }
+
       const body: Record<string, unknown> = {};
       if (recursive !== undefined) body.recursive = recursive;
       if (force !== undefined) body.force = force;
-      const result = await client.call("pool.dataset.delete", [id, body]);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      const result = await client.call("pool.dataset.delete", [dataset, body]);
+      return {
+        content: [
+          {
+            type: "text",
+            text: [
+              JSON.stringify(result, null, 2),
+              "",
+              `Verify that "${dataset}" is gone rather than trusting this return value: dataset_get`,
+              "ENOENT, filesystem_stat ENOENT, and absence from the parent's child listing. Pool free",
+              "space is not a gate — ZFS frees asynchronously, and small deltas drift between reads.",
+            ].join("\n"),
+          },
+        ],
+      };
     },
   );
 

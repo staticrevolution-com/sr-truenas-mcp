@@ -9,6 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`dataset_delete`'s `recursive` flag destroys snapshots and leaves the
+  dataset, and its description said "Recursively delete child datasets."**
+  Measured on TrueNAS 26.0-BETA.1, after it hit two real datasets: on an
+  ordinary *nested* dataset, `recursive: true` destroys every snapshot of the
+  target, unmounts the filesystem, **leaves the dataset and every byte it
+  holds**, and returns `true` — so the call reads as a successful delete while
+  the data is still there. The documented "destroy children, leave the root
+  intact" semantics are for a **pool root**.
+
+  Two things made this worse than an ordinary wrong default. `recursive: false`
+  fails honestly with `[ENOTEMPTY] … has snapshots. Set recursive=True to
+  remove them.` — **the middleware's own error recommends the destructive flag
+  by name**, so an operator who meets the honest failure is handed consent for
+  the damaging path; a recursive periodic task regenerates a blocking snapshot
+  nightly, so that failure is met reliably. And the lie was in the *parameter
+  description*, which a model reads at the moment of the call, where it
+  outvotes any warning kept further away.
+
+  Now: the action **refuses** `recursive: true` on a nested dataset that has
+  snapshots, reports the count, names the snapshots, and requires
+  `acknowledge_snapshot_destruction: true` to proceed. A pool root is
+  unaffected, derived from the absence of `/` in the name rather than from any
+  list. The refusal routes to the procedure that destroys nothing implicitly —
+  delete the snapshots explicitly, then retry with `recursive` omitted — and
+  **never recommends `recursive: true`**, which a test enforces with the
+  middleware's own wording as a positive control.
+
+  Both the refusal and a successful delete now say how to establish absence
+  independently (`dataset_get` ENOENT, `filesystem_stat` ENOENT, the parent's
+  child listing) and warn that pool free space is not a gate: ZFS frees
+  asynchronously, and `pool.dataset.delete` is not a job, so there is no job id
+  to poll. `dataset_delete` also validates its dataset name now, which
+  `CLAUDE.md` already claimed happened on every ZFS-side handler.
+
+  ⚠ The full warning lives in the **action** description, not the parameter
+  description, because `listActions` truncates a parameter description at 97
+  characters — and in a single-dispatcher server that listing is the only
+  channel by which a model learns an action's parameters. A long caveat there
+  is cut mid-sentence. 15 parameter descriptions in the registry are currently
+  truncated this way, including live safety caveats on `snapshot_task_update`;
+  that is a separate pre-existing defect, recorded here because it is the
+  reason this fix is shaped the way it is.
+
 - **`disk_smart_test_run` told the model it returns a job ID. It starts
   nothing.** The handler never reaches the middleware — the WebSocket API has
   no method to begin a SMART test — so it returned an explanation while its

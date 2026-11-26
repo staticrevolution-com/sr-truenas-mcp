@@ -122,7 +122,7 @@ Handlers serialize their payload into `content[].text` *before* the registry see
 Two validators in `src/validation.ts`:
 
 - **`validateTrueNASPath(path)`** — for filesystem paths. Must start with `/mnt/`, no `..`, no null bytes. 25 call sites across `filesystem.ts`, `sharing.ts` (smb/nfs share `path`, iscsi extent file `path`), `replication.ts` (cloudsync/cloud_backup/rsync `path`), `network.ts` (user `home`), and `storage.ts` (`dataset_set_permissions` mountpoint).
-- **`validateDatasetName(name)`** — for ZFS dataset names (e.g. `tank/data`). Charset `[a-zA-Z0-9._:/-]`, max 255 chars, no `..`, no null bytes. 6 call sites: `dataset_create` and `snapshot_list` (`storage.ts`), `replication_create` (`source_datasets[]` + `target_dataset`), and `replication_restore` (`target_dataset`). `dataset_create` additionally routes `/mnt/`-prefixed input through `validateTrueNASPath` for defense in depth.
+- **`validateDatasetName(name)`** — for ZFS dataset names (e.g. `tank/data`). Charset `[a-zA-Z0-9._:/-]`, max 255 chars, no `..`, no null bytes. 7 call sites: `dataset_create`, `snapshot_list` and `dataset_delete` (`storage.ts`), `replication_create` (`source_datasets[]` + `target_dataset`), and `replication_restore` (`target_dataset`). `dataset_create` additionally routes `/mnt/`-prefixed input through `validateTrueNASPath` for defense in depth.
 
 Run `npm run audit:counts` to verify these numbers against the source.
 
@@ -199,6 +199,7 @@ Update: publish a new tagged release (CI builds the binary tarball + GHCR image)
 ## Known Limitations
 
 - **SMART test initiation is not available via the WebSocket API**, and `disk_smart_test_run` is nonetheless registered: it starts nothing and returns an explanation naming the web UI. Its description says so, so discovery does not promise a test run. Results are available through `disk_smart_test_list` and `disk.query`.
+- **`dataset_delete`'s `recursive` flag does not mean "delete child datasets" on a nested dataset.** Measured on 26.0-BETA.1: it destroys every snapshot of the target, unmounts the filesystem, **leaves the dataset and all of its bytes**, and returns `true`. The documented "destroy children, leave the root intact" semantics are for a **pool root**. The action now refuses `recursive: true` on a nested dataset that has snapshots, reports the count, and requires `acknowledge_snapshot_destruction: true`. ⚠ The middleware's own non-recursive `[ENOTEMPTY]` error recommends `recursive=True` **by name** — so an operator who meets the honest failure is handed consent for the damaging path. Neither our refusal text nor this file repeats that recommendation.
 - `dataset_set_permissions` uses `filesystem.setperm` since `pool.dataset.permission` doesn't exist in WebSocket API.
 - `config.save` requires a binary pipe — handler returns informational message directing to TrueNAS web UI.
 - **There is no way to delete a file.** Not a gap in this server — the middleware has no unlink-equivalent at all. Verified by enumerating every method `core.get_methods` reports on TrueNAS 26.0.0-BETA.1 (781 of them): nothing removes a single file. `dataset_delete` destroys a whole dataset, and the web shell is the only other route. Don't go looking for the method; it isn't there.
