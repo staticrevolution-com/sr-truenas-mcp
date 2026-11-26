@@ -351,7 +351,7 @@ Short version (full detail in [`COMPARISON.md`](COMPARISON.md)):
 | **ZFS dataset ops** | Full CRUD + snapshots | Full CRUD + snapshots | `create_dataset` and `query_datasets` only |
 | **Safety model** | 4-tier, centralized | Per-handler `confirm` | Dry-run preview |
 | **Response filtering** | Centralized 3-layer | None | Per-handler hand-crafted masking |
-| **Tests / CI** | Vitest, **23 test files** / yes | 0 / no | 27 / yes |
+| **Tests / CI** | Vitest, **24 test files** / yes | 0 / no | 27 / yes |
 | **License** | PolyForm-NC 1.0.0 | MIT | GPL-3.0 |
 | **Status** | v1.4.3 | Single-shot publication (2 commits) | "Research Preview" |
 
@@ -485,7 +485,7 @@ architectural patterns that satisfy those requirements (the four-tier
 classification, registry-layer enforcement, post-call layered response
 filter) were developed collaboratively with AI tooling (Claude Code).
 Code was reviewed at the architectural and behavioral level rather
-than line-by-line; the test suite (**23 test files**), the
+than line-by-line; the test suite (**24 test files**), the
 fail-closed registration gate, and the doc-sync CI gate exist partly
 to compensate for that review model. Architectural and behavioral
 correctness has been verified; mechanical line-level review of every
