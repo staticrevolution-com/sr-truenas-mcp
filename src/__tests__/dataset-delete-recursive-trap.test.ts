@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { TrueNASClient } from "../client.js";
 import { buildRegistry } from "../tools/index.js";
+import { TRUNCATION_MARKER } from "../registry.js";
 import { ACTION_TIERS, SafetyTier } from "../safety.js";
 
 /**
@@ -322,12 +323,14 @@ describe("what discovery actually shows a model", () => {
 
   it("neither parameter description is amputated by discovery truncation", () => {
     const shown = datasetDeleteLine();
-    // Derived, not a restated limit: a truncated description ends in "...".
-    // Inline positive control below proves the check can fail.
+    // Derived, not a restated limit: a truncated description ends in the
+    // registry's own marker. Imported rather than spelled out, so changing
+    // the marker cannot silently retire this check. Inline positive control
+    // below proves the check can fail.
     for (const param of ["recursive", "acknowledge_snapshot_destruction"]) {
       const m = shown.match(new RegExp(`${param} \\(([^()]*)\\)`));
       expect(m, `${param} not shown in discovery`).not.toBeNull();
-      expect(m![1].endsWith("..."), `${param} description was truncated`).toBe(false);
+      expect(m![1].endsWith(TRUNCATION_MARKER), `${param} description was truncated`).toBe(false);
     }
   });
 
@@ -339,8 +342,11 @@ describe("what discovery actually shows a model", () => {
     const registry = buildRegistry(stubClient({}));
     const categories = new Set([...registry.tools.values()].map((t) => t.category));
     let truncated = 0;
+    const marker = TRUNCATION_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     for (const cat of categories) {
-      truncated += [...registry.listActions(cat).matchAll(/\([^()]*\.\.\.\)/g)].length;
+      truncated += [
+        ...registry.listActions(cat).matchAll(new RegExp(`\\([^()]*${marker}\\)`, "g")),
+      ].length;
     }
     expect(truncated).toBeGreaterThan(0);
   });

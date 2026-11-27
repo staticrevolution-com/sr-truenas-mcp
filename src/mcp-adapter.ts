@@ -35,8 +35,11 @@ Usage:
   - No args or category="help" → list all categories
   - category only → list available actions in that category with parameters
   - category + action → execute (pass action-specific params in 'params')
+  - detail: true + category (optionally + action) → full, untruncated parameter descriptions; executes nothing
 
 Safety tiers: some actions require confirm: true (tier 2) or confirm + reason (tier 1). Discovery output marks destructive actions with [destructive: ...] tags.
+
+Parameter descriptions in the default listing are capped; one ending [+] is cut short. Re-read it with detail: true before relying on it — several carry safety caveats that do not fit the cap.
 
 Tool-level annotation: destructiveHint: true. The annotation is coarse — most actions are read-only — but at least one action in this tool can modify or destroy data. Per-action destructiveness is shown in the discovery output.
 
@@ -66,6 +69,12 @@ const TRUENAS_TOOL_SCHEMA = {
     .optional()
     .describe(
       "Required for tier 1 (high-risk) actions. Explains why the operation is being performed.",
+    ),
+  detail: z
+    .boolean()
+    .optional()
+    .describe(
+      "Discovery only: return full, untruncated parameter descriptions instead of the capped listing. Executes nothing, so it is safe on any action. Use it whenever a description you are about to rely on ends [+].",
     ),
   confirm: z
     .boolean()
@@ -109,7 +118,19 @@ export function createMcpServer(init: McpServerInit): McpServer {
     TRUENAS_TOOL_DESCRIPTION,
     TRUENAS_TOOL_SCHEMA,
     TRUENAS_TOOL_ANNOTATIONS,
-    async ({ category, action, params, reason, confirm }) => {
+    async ({ category, action, params, reason, confirm, detail }) => {
+      // Detail mode: discovery only, and checked FIRST so a request carrying
+      // `detail: true` can never fall through to execution. Fail-safe by
+      // construction — the worst outcome of a mistaken `detail: true` on an
+      // execute call is a description instead of an action.
+      if (detail === true && category && category !== "help") {
+        return {
+          content: [
+            { type: "text" as const, text: init.registry.describeActions(category, action) },
+          ],
+        };
+      }
+
       // Mode 1: List categories
       if (!category || category === "help") {
         return {

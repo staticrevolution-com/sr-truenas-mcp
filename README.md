@@ -188,6 +188,7 @@ LLM client ───► │  MCP tool: truenas                     │
                 │  modes:                                │
                 │    "list_categories" → 17 categories   │
                 │    "list_actions"    → tier-tagged     │
+                │    detail: true      → uncapped descr. │
                 │    "execute"         → handler         │
                 └─────────────┬──────────────────────────┘
                               │
@@ -212,6 +213,33 @@ LLM client ───► │  MCP tool: truenas                     │
                               ▼
                        wss://truenas/websocket
 ```
+
+### Why parameter descriptions are capped, with an opt-in way past it
+
+In a single-dispatcher server the action listing is the only channel
+for per-action parameters — a client never sees the underlying Zod
+schemas. That listing caps each parameter description at 100
+characters so discovery stays cheap, which means a long description
+arrives cut.
+
+Raising the cap would charge every listing for the few descriptions
+that need the room, and several of those carry safety caveats. So the
+cap stays, a cut description ends `[+]`, the listing says once that
+more text exists, and `detail: true` returns every description
+verbatim for a category or a single action:
+
+```
+truenas(category: "storage")                          # capped listing, marks cuts with [+]
+truenas(category: "storage", detail: true)            # full text, whole category
+truenas(category: "storage", action: "dataset_delete", detail: true)
+```
+
+Detail mode covers every registered action — it is not a curated set
+of actions deemed worth describing, because such a list would decay
+precisely where it mattered. It is also checked before the execute
+path, so `detail: true` can never dispatch a handler: a mistaken
+`detail: true` on an execute call returns text instead of destroying
+something.
 
 ### Why WebSocket and not REST
 
@@ -351,7 +379,7 @@ Short version (full detail in [`COMPARISON.md`](COMPARISON.md)):
 | **ZFS dataset ops** | Full CRUD + snapshots | Full CRUD + snapshots | `create_dataset` and `query_datasets` only |
 | **Safety model** | 4-tier, centralized | Per-handler `confirm` | Dry-run preview |
 | **Response filtering** | Centralized 3-layer | None | Per-handler hand-crafted masking |
-| **Tests / CI** | Vitest, **24 test files** / yes | 0 / no | 27 / yes |
+| **Tests / CI** | Vitest, **25 test files** / yes | 0 / no | 27 / yes |
 | **License** | PolyForm-NC 1.0.0 | MIT | GPL-3.0 |
 | **Status** | v1.5.0 | Single-shot publication (2 commits) | "Research Preview" |
 
@@ -485,7 +513,7 @@ architectural patterns that satisfy those requirements (the four-tier
 classification, registry-layer enforcement, post-call layered response
 filter) were developed collaboratively with AI tooling (Claude Code).
 Code was reviewed at the architectural and behavioral level rather
-than line-by-line; the test suite (**24 test files**), the
+than line-by-line; the test suite (**25 test files**), the
 fail-closed registration gate, and the doc-sync CI gate exist partly
 to compensate for that review model. Architectural and behavioral
 correctness has been verified; mechanical line-level review of every

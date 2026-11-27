@@ -7,7 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **An opt-in detail mode for discovery, because the action listing caps every
+  parameter description.** In a single-dispatcher server that listing is the
+  only channel a client has for per-action parameters — it never sees the
+  underlying Zod schemas — and it cut each description at 100 characters with
+  no indication that anything had been removed. Several of the cut descriptions
+  carry safety caveats, so a caller could read a warning that stopped
+  mid-sentence and have no way to tell.
+
+  Raising the cap would charge every listing for the few descriptions that need
+  the room, so the cap stays and an uncapped channel sits beside it:
+
+  - `detail: true` with a category returns every action's parameter
+    descriptions verbatim; add `action` to narrow it to one.
+  - A description the cap cut now ends `[+]`, and the listing says once, only
+    when something was cut, that `detail: true` returns the full text. The
+    marker is the same length as the `...` it replaced, so the default
+    listing's token cost is unchanged.
+  - Detail mode covers **every** registered action with no per-action opt-in. A
+    curated list of "actions worth describing" would decay precisely where it
+    mattered, and nothing would report it.
+  - `detail: true` is checked before the execute path, so it can never dispatch
+    a handler. A mistaken `detail: true` on an execute call returns a
+    description instead of performing the action — the fail-safe direction on a
+    server whose tier-1 actions destroy data.
+
+  Gated by `src/__tests__/detail-mode-untruncated.test.ts`, which asserts that
+  detail output contains each parameter description **verbatim, read from Zod's
+  own accessor rather than from the extractor that renders it** — equality to
+  the source, never a length, and with the checked population asserted
+  non-empty. Mutation-verified by line number: re-introducing the cut in detail
+  mode fails 13 named cases, and removing the cap from the default listing
+  fails the two gates that keep its cost promise honest.
 
 ## [1.5.0] — 2026-11-26
 

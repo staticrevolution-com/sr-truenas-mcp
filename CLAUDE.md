@@ -52,7 +52,7 @@ GitHub releases include pre-built `sr-truenas-mcp-linux-x64.tar.gz` with SHA256 
 
 ## Architecture
 
-Single MCP tool (`truenas`) with hierarchical discovery: 276 active actions across 17 categories, exposed through 3 modes (list categories, list actions, execute).
+Single MCP tool (`truenas`) with hierarchical discovery: 276 active actions across 17 categories, exposed through 4 modes (list categories, list actions, describe actions in full via `detail: true`, execute).
 
 **Transport**: WebSocket JSON-RPC 2.0 (DDP protocol) at `wss://{host}/websocket`.
 
@@ -68,7 +68,7 @@ Single MCP tool (`truenas`) with hierarchical discovery: 276 active actions acro
 
 | File | Purpose |
 |------|---------|
-| `src/index.ts` | MCP server setup, single `truenas` tool with 3 modes |
+| `src/index.ts` | MCP server setup, single `truenas` tool with 4 modes |
 | `src/registry.ts` | Tool registry, categorization, centralized safety enforcement |
 | `src/client.ts` | WebSocket JSON-RPC 2.0 client (DDP handshake, multiplexing, reconnect) |
 | `src/safety.ts` | Tier classification map (pure data, every action -> tier) |
@@ -198,6 +198,7 @@ Update: publish a new tagged release (CI builds the binary tarball + GHCR image)
 
 ## Known Limitations
 
+- **`listActions` caps every parameter description at 100 characters.** A description cut by the cap ends `[+]`, and the listing says once that `detail: true` returns the full text. Parameter descriptions registry-wide are over the cap, several of them safety caveats — the gate in `src/__tests__/detail-mode-untruncated.test.ts` asserts the population is non-empty rather than pinning a count no one would re-derive — so **do not act on a `[+]` description without re-reading it in detail mode**. The cap is deliberate (it is what keeps discovery cheap) and `detail: true` is the uncapped channel beside it, covering every action with no per-action opt-in. ⚠ Action descriptions are **not** capped; that is why the `dataset_delete` warning below lives in the action description rather than in `recursive`'s.
 - **SMART test initiation is not available via the WebSocket API**, and `disk_smart_test_run` is nonetheless registered: it starts nothing and returns an explanation naming the web UI. Its description says so, so discovery does not promise a test run. Results are available through `disk_smart_test_list` and `disk.query`.
 - **`dataset_delete`'s `recursive` flag does not mean "delete child datasets" on a nested dataset.** Measured on 26.0-BETA.1: it destroys every snapshot of the target, unmounts the filesystem, **leaves the dataset and all of its bytes**, and returns `true`. The documented "destroy children, leave the root intact" semantics are for a **pool root**. The action now refuses `recursive: true` on a nested dataset that has snapshots, reports the count, and requires `acknowledge_snapshot_destruction: true`. ⚠ The middleware's own non-recursive `[ENOTEMPTY]` error recommends `recursive=True` **by name** — so an operator who meets the honest failure is handed consent for the damaging path. Neither our refusal text nor this file repeats that recommendation.
 - `dataset_set_permissions` uses `filesystem.setperm` since `pool.dataset.permission` doesn't exist in WebSocket API.
