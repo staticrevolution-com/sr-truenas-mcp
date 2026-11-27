@@ -7,7 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **An opt-in detail mode for discovery, because the action listing caps every
+  parameter description.** In a single-dispatcher server that listing is the
+  only channel a client has for per-action parameters — it never sees the
+  underlying Zod schemas — and it cut each description at 100 characters with
+  no indication that anything had been removed. Several of the cut descriptions
+  carry safety caveats, so a caller could read a warning that stopped
+  mid-sentence and have no way to tell.
+
+  Raising the cap would charge every listing for the few descriptions that need
+  the room, so the cap stays and an uncapped channel sits beside it:
+
+  - `detail: true` with a category returns every action's parameter
+    descriptions verbatim; add `action` to narrow it to one.
+  - A description the cap cut now ends `[+]`, and the listing says once, only
+    when something was cut, that `detail: true` returns the full text. The
+    marker is the same length as the `...` it replaced, so the default
+    listing's token cost is unchanged.
+  - Detail mode covers **every** registered action with no per-action opt-in. A
+    curated list of "actions worth describing" would decay precisely where it
+    mattered, and nothing would report it.
+  - `detail: true` is checked before the execute path — and before the tier
+    gates — so it can never dispatch a handler. Combining it with `params`,
+    `confirm` or `reason` is **refused** with an error naming both ways
+    forward, rather than reinterpreted as either one. Returning the
+    description would be safe in that nothing runs, but it presents a
+    description as the outcome of the action, so a caller that meant to
+    execute reads success and never learns the action did not run. An empty
+    `params: {}` is not execution intent.
+  - The tool's behaviour moved into an exported `dispatch()` that
+    `createMcpServer` registers as the tool's only callback. Pure refactor,
+    done so the gate above is testable on the live dispatch path instead of
+    through the SDK's private registered-tool map.
+
+  Gated by `src/__tests__/detail-mode-untruncated.test.ts`, which asserts that
+  detail output contains each parameter description **verbatim, read from Zod's
+  own accessor rather than from the extractor that renders it** — equality to
+  the source, never a length, and with the checked population asserted
+  non-empty. Mutation-verified by line number: re-introducing the cut in detail
+  mode fails 13 named cases, and removing the cap from the default listing
+  fails the two gates that keep its cost promise honest.
+
+  The detail/execute refusal is gated separately, and every case asserts
+  **both** that the call was refused **and** that a handler call counter did
+  not move — asserting only the message would pass against a version that
+  refused *after* dispatching, which is the one outcome that matters. Two
+  positive controls show the same handler does run without `detail`, so a
+  zero counter cannot be explained by the handler being unreachable.
+  Mutation-verified by line number: never refusing fails 8 named cases,
+  removing the gate fails 10, and dropping `confirm` or `params` from the
+  intent set fails 3 and 1 respectively — so each intent field is
+  independently necessary.
 
 ## [1.5.0] — 2026-11-26
 
