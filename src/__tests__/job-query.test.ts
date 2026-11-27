@@ -3,9 +3,11 @@ import type { TrueNASClient } from "../client.js";
 import { buildRegistry } from "../tools/index.js";
 import {
   projectJob,
+  projectJobResult,
   JOB_FIELD_ALLOWLIST,
   JOB_FIELD_DENIED,
 } from "../tools/jobs.js";
+import { filterSensitiveFields } from "../filters.js";
 import { ACTION_TIERS, SafetyTier } from "../safety.js";
 
 /**
@@ -320,5 +322,156 @@ describe("job_list filtering goes to the server", () => {
     const registry = buildRegistry(stubClient([]));
     const out = text(await registry.execute("system", "job_list", { state: "DONE" }));
     expect(out.toLowerCase()).toMatch(/invalid|expected|enum/);
+  });
+});
+
+describe("a scalar job result is withheld — the field-name filter cannot redact one", () => {
+  /**
+   * ⚠ This is the defect the allowlist did NOT cover. `arguments` and
+   * `credentials` were excluded by name; `result` was allowlisted because it
+   * is the point of the action. But `filterSensitiveFields` matches field
+   * NAMES, and a bare string has none — so a string result reached the caller
+   * intact, and one such result is a ZFS dataset encryption key.
+   *
+   * Measured on TrueNAS 27.0 via `core.get_methods`: of 105 `@job` methods,
+   * three return a bare string — `pool.dataset.export_key` (the key as hex),
+   * `audit.export` (a path), `docker.backup` (a name).
+   */
+
+  /** `pool.dataset.export_key` as middlewared records it. Real schema, real shape. */
+  const EXPORT_KEY_JOB = {
+    id: 777,
+    method: "pool.dataset.export_key",
+    state: "SUCCESS",
+    arguments: ["data-pool/secret"],
+    credentials: null,
+    progress: { percent: 100, description: "", extra: null },
+    result: "deadbeefcafe0123456789abcdef0123456789abcdef0123456789abcdef0123",
+    error: null,
+    exception: null,
+    exc_info: null,
+    logs_excerpt: null,
+    logs_path: null,
+    message_ids: [],
+    result_encoding_error: null,
+    transient: false,
+    abortable: false,
+    description: null,
+    time_started: { $date: 1 },
+    time_finished: { $date: 2 },
+  };
+
+  it("POSITIVE CONTROL: the filter genuinely cannot redact a bare string", () => {
+    // The premise the whole fix rests on. If filterSensitiveFields ever grows
+    // the ability to redact scalars, this fails and the fix can be revisited.
+    const key = EXPORT_KEY_JOB.result;
+    expect(JSON.stringify(filterSensitiveFields({ result: key }))).toContain(key);
+    // And the contrast: key material under a NAME is redacted correctly, so
+    // the filter is not simply broken.
+    const named = filterSensitiveFields({ privatekey: "SENTINEL-KEY-MATERIAL-NOT-A-REAL-KEY" });
+    expect(JSON.stringify(named)).not.toContain("SENTINEL-KEY-MATERIAL");
+  });
+
+  it("the dataset encryption key does not reach job_get's output", async () => {
+    const registry = buildRegistry(stubClient([EXPORT_KEY_JOB]));
+    const out = text(await registry.execute("system", "job_get", { job_id: 777 }));
+    expect(out).not.toContain("deadbeefcafe");
+    // Positive control: it IS in the input, so absence is withholding.
+    expect(JSON.stringify(EXPORT_KEY_JOB)).toContain("deadbeefcafe");
+    // And the job is still identified, so withholding did not gut the answer.
+    const parsed = JSON.parse(out);
+    expect(parsed.found).toBe(true);
+    expect(parsed.method).toBe("pool.dataset.export_key");
+    expect(parsed.state).toBe("SUCCESS");
+  });
+
+  it("says what was withheld and why, rather than returning null", async () => {
+    // Silence would be indistinguishable from "the job returned nothing",
+    // which is the same failure class as an unknown id reading as success.
+    const registry = buildRegistry(stubClient([EXPORT_KEY_JOB]));
+    const parsed = JSON.parse(text(await registry.execute("system", "job_get", { job_id: 777 })));
+    expect(parsed.result.withheld).toBeTruthy();
+    expect(parsed.result.type).toBe("string");
+    expect(parsed.result.length).toBe(EXPORT_KEY_JOB.result.length);
+    expect(parsed.result.reason).toContain("field name");
+  });
+
+  it("job_list withholds it too, not only job_get", async () => {
+    const registry = buildRegistry(stubClient([EXPORT_KEY_JOB]));
+    const out = text(await registry.execute("system", "job_list", {}));
+    expect(out).not.toContain("deadbeefcafe");
+    expect(out).toContain("withheld");
+  });
+
+  it.each([
+    ["pool.dataset.export_key", "deadbeefcafe0123456789abcdef0123"],
+    ["audit.export", "/mnt/data-pool/audit-export-2026.csv"],
+    ["docker.backup", "backup-2026-11-27"],
+    // core.job_wait proxies ANOTHER job's result, and its own return schema
+    // is untyped — so it is a second path to the same leak that no method
+    // list could enumerate.
+    ["core.job_wait", "deadbeefcafe0123456789abcdef0123"],
+    // A method that does not exist yet. The rule must hold for it too,
+    // which is what makes this a shape rule and not a denylist.
+    ["some.method.truenas.adds.in.28", "whatever-this-turns-out-to-be"],
+  ])("withholds a bare-string result from %s", (method, value) => {
+    const projected = projectJob({ id: 1, method, state: "SUCCESS", result: value });
+    expect(JSON.stringify(projected)).not.toContain(value);
+    expect((projected.result as Record<string, unknown>).withheld).toBeTruthy();
+  });
+
+  it("withholds an array containing bare strings", () => {
+    // No @job method returns one today — every array-returning method
+    // returns objects — but core.job_wait can proxy any shape, so this is
+    // checked rather than assumed.
+    const projected = projectJob({ id: 2, method: "core.job_wait", state: "SUCCESS", result: ["key-a", "key-b"] });
+    expect(JSON.stringify(projected)).not.toContain("key-a");
+    expect((projected.result as Record<string, unknown>).type).toBe("array");
+  });
+
+  it("STRUCTURED results still pass through, filtered as before", async () => {
+    // The cost of the rule must stay bounded: objects are what the filter
+    // can handle, so they are not withheld. 21 of 105 @job methods return
+    // an object and they keep working.
+    const job = {
+      id: 3,
+      method: "certificate.create",
+      state: "SUCCESS",
+      result: { id: 7, name: "mycert", privatekey: "SENTINEL-KEY-MATERIAL-NOT-A-REAL-KEY", certificate: "PEM" },
+      error: null,
+    };
+    const registry = buildRegistry(stubClient([job]));
+    const parsed = JSON.parse(text(await registry.execute("system", "job_get", { job_id: 3 })));
+    // Useful content survives…
+    expect(parsed.result.name).toBe("mycert");
+    expect(parsed.result.id).toBe(7);
+    expect(parsed.result.withheld).toBeUndefined();
+    // …and the named key material is redacted by the existing filter.
+    expect(JSON.stringify(parsed)).not.toContain("SENTINEL-KEY-MATERIAL");
+  });
+
+  it.each([
+    ["boolean", true],
+    ["number", 42],
+    ["null", null],
+  ])("passes a %s result through — it cannot carry key material", (_label, value) => {
+    const projected = projectJob({ id: 4, method: "update.download", state: "SUCCESS", result: value });
+    expect(projected.result).toEqual(value);
+  });
+
+  it("projectJobResult is the unit doing this, and it is exported for reuse", () => {
+    // Tested directly as well as through the action, so a future caller that
+    // needs the same rule has a gated function to reach for rather than
+    // reimplementing the shape check.
+    expect((projectJobResult("abc") as Record<string, unknown>).withheld).toBeTruthy();
+    expect(projectJobResult({ a: 1 })).toEqual({ a: 1 });
+    expect(projectJobResult(null)).toBeNull();
+    expect(projectJobResult([{ a: 1 }])).toEqual([{ a: 1 }]);
+  });
+
+  it("an empty-string result is withheld too, not treated as absent", () => {
+    // `if (result)` would have let this through; the check is on type.
+    const projected = projectJob({ id: 5, method: "audit.export", state: "SUCCESS", result: "" });
+    expect((projected.result as Record<string, unknown>).withheld).toBeTruthy();
   });
 });

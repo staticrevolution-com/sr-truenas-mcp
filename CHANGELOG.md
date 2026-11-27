@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`job_get` could return a ZFS dataset encryption key.** `result` is
+  allowlisted — it is the point of the action — and this server's response
+  filter, `filterSensitiveFields`, matches field **names**. A bare string has
+  no field name, so the filter is structurally incapable of redacting one.
+  `pool.dataset.export_key` is an `@job` whose result is, in the middleware's
+  own words, "the exported encryption key as a hex string", and it passed
+  through the allowlist and the filter completely intact.
+
+  Measured both directions before fixing: a `certificate.create` result, whose
+  key material sits under a named `privatekey` field, is redacted correctly —
+  so the filter is not broken, it simply has nothing to match on a scalar.
+
+  A scalar result is now withheld before the filter sees it and replaced by a
+  descriptor giving its type and length, so a withheld value cannot be
+  mistaken for a job that returned nothing. Structured results pass through
+  unchanged.
+
+  ⚠ **This is a shape rule, not a list of dangerous methods**, and two
+  measurements say a list cannot work. Of the 105 `@job` methods on TrueNAS
+  27.0 (out of 837 total), exactly three return a bare string —
+  `pool.dataset.export_key` (the key), `audit.export` (a path),
+  `docker.backup` (a name) — so a three-entry list would be correct today and
+  silently wrong the first time a fourth appears. And `core.job_wait`'s own
+  return schema is **untyped**: it proxies another job's result, so no method
+  name predicts what any of its records carries.
+
+  ⚠ **Scope note, because it is what made the finding possible.** The
+  enumeration covered the MIDDLEWARE's job methods via `core.get_methods`, not
+  this server's 24 job-starting call sites. `job_get` queries by id against
+  the whole system and reaches jobs started from the web UI or the API, and
+  `pool.dataset.export_key` is not one of this server's registered actions —
+  so scoping the question to our own call sites would have returned a
+  reassuring answer and missed it entirely.
+
 ### Added
 
 - **An opt-in detail mode for discovery, because the action listing caps every

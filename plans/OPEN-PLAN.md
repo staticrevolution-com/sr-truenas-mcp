@@ -10,6 +10,7 @@ own status header.
 - [ ] #30 Nine CRUD families still lack an `update` verb (its second half, the stale `COMPARISON.md` test count, is fixed)
 - [ ] #28 `npm run build:binary` hangs locally — ⚠ its title overstates the release impact: v1.4.1, v1.4.2 and v1.4.3 all shipped the binary, its SHA256 and the SBOM; only v1.4.0 is missing them
 - [ ] Re-derive [`docs/TOOL-SURFACE-EVALUATION.md`](../docs/TOOL-SURFACE-EVALUATION.md)'s recommendation against what the gateway's per-token RBAC enforces today; its all-or-nothing premise predates argument constraints
+- [~] `job_get`'s `result` could return a ZFS dataset encryption key — a scalar has no field name, so the response filter could not redact it. Withheld by a shape rule rather than a method list. PR open, not merged; blocks v1.6.0
 - [~] #58 No action could query a job: 24 actions return a job id that nothing accepted back, so every long-running job's outcome was unreachable. `job_get` / `job_list` added as one general tier-3 pair, with a field allowlist so a job's arguments and session credentials stay server-side. PR #62 open, not merged; ships with the next release
 - [ ] The two deferred follow-ups from the 2026-06-12 field report: the TrueNAS 26.0 compatibility sweep, and a job-method audit across every handler
 
