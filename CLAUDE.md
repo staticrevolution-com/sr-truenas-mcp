@@ -52,7 +52,7 @@ GitHub releases include pre-built `sr-truenas-mcp-linux-x64.tar.gz` with SHA256 
 
 ## Architecture
 
-Single MCP tool (`truenas`) with hierarchical discovery: 276 active actions across 17 categories, exposed through 3 modes (list categories, list actions, execute).
+Single MCP tool (`truenas`) with hierarchical discovery: 278 active actions across 17 categories, exposed through 3 modes (list categories, list actions, execute).
 
 **Transport**: WebSocket JSON-RPC 2.0 (DDP protocol) at `wss://{host}/websocket`.
 
@@ -74,7 +74,8 @@ Single MCP tool (`truenas`) with hierarchical discovery: 276 active actions acro
 | `src/safety.ts` | Tier classification map (pure data, every action -> tier) |
 | `src/validation.ts` | Path validation (`/mnt/` prefix, no traversal) + dataset-name validation (`validateDatasetName`) |
 | `src/filters.ts` | Response filtering (layered: 57 exact + 9 suffix + 15 allowlist) |
-| `src/tools/*.ts` | 8 tool modules registering handlers |
+| `src/tools/*.ts` | 9 tool modules registering handlers |
+| `src/tools/jobs.ts` | `job_get` / `job_list` — and `JOB_FIELD_ALLOWLIST`, the control that keeps a job's own arguments and session credentials out of the response |
 | `src/tools/index.ts` | `buildRegistry()` wiring |
 | `src/resources.ts` | 12 read-only MCP Resources (filtered) |
 
@@ -85,7 +86,7 @@ Single MCP tool (`truenas`) with hierarchical discovery: 276 active actions acro
 | 0 — Blocked | Never registered | 8 | `system_reboot`, `truenas_api_call`, `cronjob_create` |
 | 1 — Confirm+Reason | `confirm: true` + `reason: "string"` | 20 | `pool_export`, `disk_wipe`, `dataset_delete`, `user_create`, `ssh_config_update` |
 | 2 — Confirm | `confirm: true` | 95 | `service_stop`, `snapshot_delete`, `smb_share_create`, `iscsi_extent_create`, `replication_run` |
-| 3 — Open | None | 161 | All reads, safe queries |
+| 3 — Open | None | 163 | All reads, safe queries |
 
 Full tier assignments in `src/safety.ts`. 32 handlers also have in-handler `confirm` checks as defense-in-depth.
 
@@ -198,6 +199,8 @@ Update: publish a new tagged release (CI builds the binary tarball + GHCR image)
 
 ## Known Limitations
 
+- **A job id returned by an asynchronous action is queryable with `job_get`.** 24 actions start a middlewared `@job` and deliberately do not await it (`describeAsyncJob` in `src/job-utils.ts`), because awaiting a replication run or a scrub would block the call for minutes to hours. Until `job_get` / `job_list` existed, **no registered action accepted a job id back**, so those 24 ids were receipts for work whose outcome was unreachable. ⚠ `pool.dataset.delete` is `"job": false`, so polling for it waits on a record that never exists — a job id is not evidence that a method is a job.
+- **`job_get` / `job_list` return job metadata only, by allowlist.** Measured on 27.0: a `core.get_jobs` record carries `arguments` (the call arguments verbatim — a `user.create` job's password), `credentials` (the authenticating credential record for the session that started it, the same exposure class as the plaintext-API-key audit log), `exc_info` / `exception` (tracebacks that can embed those arguments), and `logs_excerpt` / `logs_path`. None of these is returned. ⚠ It is an **allowlist**, so a field a later TrueNAS release adds is excluded by default — do not convert it to a denylist, and do not widen it on the strength of a sample of jobs that happened to carry nothing sensitive.
 - **SMART test initiation is not available via the WebSocket API**, and `disk_smart_test_run` is nonetheless registered: it starts nothing and returns an explanation naming the web UI. Its description says so, so discovery does not promise a test run. Results are available through `disk_smart_test_list` and `disk.query`.
 - **`dataset_delete`'s `recursive` flag does not mean "delete child datasets" on a nested dataset.** Measured on 26.0-BETA.1: it destroys every snapshot of the target, unmounts the filesystem, **leaves the dataset and all of its bytes**, and returns `true`. The documented "destroy children, leave the root intact" semantics are for a **pool root**. The action now refuses `recursive: true` on a nested dataset that has snapshots, reports the count, and requires `acknowledge_snapshot_destruction: true`. ⚠ The middleware's own non-recursive `[ENOTEMPTY]` error recommends `recursive=True` **by name** — so an operator who meets the honest failure is handed consent for the damaging path. Neither our refusal text nor this file repeats that recommendation.
 - `dataset_set_permissions` uses `filesystem.setperm` since `pool.dataset.permission` doesn't exist in WebSocket API.

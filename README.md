@@ -1,7 +1,7 @@
 # sr-truenas-mcp
 
 A hardened [Model Context Protocol](https://modelcontextprotocol.io/) server
-for [TrueNAS SCALE](https://www.truenas.com/truenas-scale/). 276
+for [TrueNAS SCALE](https://www.truenas.com/truenas-scale/). 278
 safety-tiered actions across 17 categories of TrueNAS surface, exposed
 through a single hierarchical MCP tool over WebSocket JSON-RPC 2.0.
 
@@ -59,7 +59,7 @@ and dataset-name validation, and wrote a test suite. See
 
 ## What it does
 
-276 actions across 17 categories. The full surface (with safety tiers)
+278 actions across 17 categories. The full surface (with safety tiers)
 is documented at runtime via the `truenas` tool's discovery modes; the
 short version:
 
@@ -69,7 +69,7 @@ short version:
 | `data_protection` (45) | Replication tasks (CRUD, run, restore), cloud sync (CRUD, run, abort, restore, credentials, bucket and directory listing, providers), cloud backup (CRUD, run, abort, snapshots), rsync tasks (CRUD, run), SSH keychain credentials, and list/delete/run for the cron and init/shutdown scripts whose *creation* is tier 0 |
 | `sharing` (36) | SMB, NFS and iSCSI — share CRUD and per-protocol config, plus iSCSI targets, extents, portals, initiators, target-extent mappings and live sessions |
 | `filesystem` (10) | File **content** read and write (`filesystem_get` / `filesystem_put`, over HTTPS rather than the WebSocket), `stat`, `listdir`, `mkdir`, `chown`, bounded recursive `disk_usage`, POSIX permissions, and NFSv4 ACL get/set |
-| `system` (22) | `system_info`, version (and this server's own build version), general and advanced config, services (start/stop/restart/update), NTP servers, mail config and send, API keys, and config **download** (config *upload* is tier 0) |
+| `system` (24) | `system_info`, version (and this server's own build version), general and advanced config, services (start/stop/restart/update), NTP servers, mail config and send, API keys, config **download** (config *upload* is tier 0), and job lookup (`job_get`, `job_list`) for the asynchronous actions that return a job id |
 | `update` (14) | Update check, download, apply, config — and **boot environments** (create, activate, delete, keep, list) plus boot-pool state, attach, detach and scrub |
 | `network` (15) | Interface CRUD, global config, static routes, IPMI info, a summary view, and the staged-change lifecycle: commit, check-in, rollback |
 | `account` (16) | User CRUD, set-password, shell choices; group CRUD; privilege/role CRUD |
@@ -97,8 +97,8 @@ for the official Research Preview's narrower surface.
 Three things, in roughly the order they matter:
 
 **Single hierarchical tool.** The MCP server registers one tool — `truenas` —
-not 276. The model spends prompt budget on one tool definition (~200
-tokens) instead of 276 separate JSON Schemas. Action discovery is a
+not 278. The model spends prompt budget on one tool definition (~200
+tokens) instead of 278 separate JSON Schemas. Action discovery is a
 runtime call (`truenas({ mode: "list_categories" })` →
 `truenas({ category: "storage" })` → `truenas({ category: "storage",
 action: "dataset_create", ... })`). For a session that uses ten different
@@ -256,7 +256,7 @@ map cleanly:
   delete, share create/delete, user/group CRUD, certificate CRUD,
   cloud sync delete, etc. Recoverable but should not happen by
   accident.
-- **Tier 3 — open.** 161 actions. All reads, all queries, safe creates
+- **Tier 3 — open.** 163 actions. All reads, all queries, safe creates
   (e.g. read-only `query_filters` operations).
 
 The data lives in `src/safety.ts` and is enforced at registration. An
@@ -347,11 +347,11 @@ Short version (full detail in [`COMPARISON.md`](COMPARISON.md)):
 | | sr-truenas-mcp | spranab/truenas-mcp | truenas/truenas-mcp |
 |---|---|---|---|
 | **Transport** | WebSocket | REST | WebSocket |
-| **Action coverage** | 276 (17 categories) | ~278 (18 categories) | 52 flat tools |
+| **Action coverage** | 278 (17 categories) | ~278 (18 categories) | 52 flat tools |
 | **ZFS dataset ops** | Full CRUD + snapshots | Full CRUD + snapshots | `create_dataset` and `query_datasets` only |
 | **Safety model** | 4-tier, centralized | Per-handler `confirm` | Dry-run preview |
 | **Response filtering** | Centralized 3-layer | None | Per-handler hand-crafted masking |
-| **Tests / CI** | Vitest, **24 test files** / yes | 0 / no | 27 / yes |
+| **Tests / CI** | Vitest, **25 test files** / yes | 0 / no | 27 / yes |
 | **License** | PolyForm-NC 1.0.0 | MIT | GPL-3.0 |
 | **Status** | v1.5.0 | Single-shot publication (2 commits) | "Research Preview" |
 
@@ -485,7 +485,7 @@ architectural patterns that satisfy those requirements (the four-tier
 classification, registry-layer enforcement, post-call layered response
 filter) were developed collaboratively with AI tooling (Claude Code).
 Code was reviewed at the architectural and behavioral level rather
-than line-by-line; the test suite (**24 test files**), the
+than line-by-line; the test suite (**25 test files**), the
 fail-closed registration gate, and the doc-sync CI gate exist partly
 to compensate for that review model. Architectural and behavioral
 correctness has been verified; mechanical line-level review of every
