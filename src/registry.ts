@@ -109,7 +109,7 @@ export const TRUNCATION_MARKER = "[+]";
 export const DESCRIPTION_BUDGET = 100;
 
 const CATEGORIES: Record<string, string> = {
-  system: "System info, configuration, services, mail, API keys, and NTP",
+  system: "System info, configuration, services, mail, API keys, NTP, and job lookup",
   storage: "Storage pools, datasets, snapshots, and periodic snapshot tasks",
   sharing: "File sharing — SMB/CIFS, NFS exports, and iSCSI (targets, extents, portals, initiators)",
   network: "Network interfaces, global config, static routes, IPMI, and staged change management",

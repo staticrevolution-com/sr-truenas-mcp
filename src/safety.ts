@@ -195,6 +195,13 @@ export const ACTION_TIERS: Record<string, SafetyTier> = {
   system_info: SafetyTier.Open,
   system_version: SafetyTier.Open,
   system_mcp_version: SafetyTier.Open,
+
+  // Job observability — reads only. `core.get_jobs` is a query; neither
+  // action can start, abort or alter a job, and both project the record
+  // onto an allowlist so the job's own arguments and the credentials of the
+  // session that started it never leave the server.
+  job_get: SafetyTier.Open,
+  job_list: SafetyTier.Open,
   system_general_config: SafetyTier.Open,
   system_general_update: SafetyTier.Confirm,
   system_advanced_config: SafetyTier.Open,

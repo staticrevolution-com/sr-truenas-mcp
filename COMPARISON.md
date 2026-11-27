@@ -37,7 +37,7 @@ A short version suitable for the README:
 |---|---|---|---|
 | **Language / runtime** | TypeScript (Node.js 26, ~78MB single-file Linux binary) | TypeScript (Node.js) | Go (cross-platform binaries) |
 | **Transport** | WebSocket (`wss://`, JSON-RPC 2.0 / DDP) | REST (`https://`, Bearer token) | WebSocket (`wss://` only — `ws://` revokes the API key) |
-| **Action coverage** | **276 actions**, **17 categories** | ~278 actions, 18 categories | 52 tools, flat |
+| **Action coverage** | **278 actions**, **17 categories** | ~278 actions, 18 categories | 52 tools, flat |
 | **MCP tool model** | Single hierarchical `truenas` tool with discovery modes | Single hierarchical `truenas` tool with discovery modes | 52 separate MCP tools (flat `tools/list`) |
 | **ZFS dataset ops** | Create, delete, update, snapshot CRUD, rollback, set-properties, permissions, ACLs | Create, delete, update, snapshot CRUD, rollback (verify per-action) | `create_dataset` and `query_datasets` only |
 | **Replication / cloud sync / cloud backup** | Yes | Yes | None |
@@ -45,7 +45,7 @@ A short version suitable for the README:
 | **Destructive-action safety** | 4-tier classification, two-phase confirm, fail-closed registration | Per-handler `if (!confirm)` checks | Dry-run mode (preview before execute) |
 | **Response filtering for secrets** | Centralized 3-layer filter (57 exact + 9 suffix + 15-entry allowlist) | None | Per-handler hand-crafted masking |
 | **Path & dataset-name validation** | Centralized validators on every filesystem and ZFS-side handler | None | None visible at the helper level |
-| **Tests** | Vitest, **25 test files** | None | 27 (Go test), 6 test files |
+| **Tests** | Vitest, **26 test files** | None | 27 (Go test), 6 test files |
 | **CI** | Yes (build + test + audit) | None | Yes (build + test + cross-platform release) |
 | **License** | PolyForm Noncommercial 1.0.0 (source-available, free for non-commercial use) | MIT | GPL-3.0 |
 | **Status** | Released — v1.5.0 | Single-shot publication (2 commits, 2026-03-31) | "Research Preview — not recommended for production use" |
@@ -164,7 +164,7 @@ Spranab's repo has no test files, no `test` script in `package.json`, and no
 test-framework dependency
 ([repo root listing](https://github.com/spranab/truenas-mcp)).
 
-sr-truenas-mcp ships a Vitest suite across **25 test files**. CI runs the full
+sr-truenas-mcp ships a Vitest suite across **26 test files**. CI runs the full
 suite plus `tsc --noEmit` and `npm audit` on every push.
 
 #### Maintenance state
@@ -265,7 +265,7 @@ tool enumeration:
 - **Share update or deletion.** Only `create_smb_share` and `create_nfs_share`;
   no edit or delete.
 
-This is a 52-vs-276 functional-coverage delta. The official version is
+This is a 52-vs-278 functional-coverage delta. The official version is
 intentionally narrow ("we picked the things you most often ask Claude to help
 with"); sr-truenas-mcp is intentionally exhaustive and adds the safety surface
 to make exhaustiveness manageable.

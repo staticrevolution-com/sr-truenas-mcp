@@ -37,7 +37,7 @@ export function createServer(config: ServerConfig): McpServer {
     // one misidentifies the running server to every client.
     version: "1.5.0",
     description:
-      "Hardened MCP server for TrueNAS SCALE — 276 safety-tiered actions behind a single hierarchical interface",
+      "Hardened MCP server for TrueNAS SCALE — 278 safety-tiered actions behind a single hierarchical interface",
     registry: buildRegistry(client),
     registerResources: (server) => registerResources(server, client),
   });

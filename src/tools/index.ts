@@ -9,6 +9,7 @@ import { register as registerVm } from "./vm.js";
 import { register as registerAlert } from "./alert.js";
 import { register as registerReplication } from "./replication.js";
 import { register as registerFilesystem } from "./filesystem.js";
+import { register as registerJobs } from "./jobs.js";
 
 export function buildRegistry(client: TrueNASClient): ToolRegistry {
   const registry = new ToolRegistry();
@@ -22,6 +23,7 @@ export function buildRegistry(client: TrueNASClient): ToolRegistry {
   registerAlert(registry as any, client);
   registerReplication(registry as any, client);
   registerFilesystem(registry as any, client);
+  registerJobs(registry as any, client);
 
   return registry;
 }

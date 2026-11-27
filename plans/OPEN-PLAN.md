@@ -10,12 +10,12 @@ own status header.
 - [ ] #30 Nine CRUD families still lack an `update` verb (its second half, the stale `COMPARISON.md` test count, is fixed)
 - [ ] #28 `npm run build:binary` hangs locally — ⚠ its title overstates the release impact: v1.4.1, v1.4.2 and v1.4.3 all shipped the binary, its SHA256 and the SBOM; only v1.4.0 is missing them
 - [ ] Re-derive [`docs/TOOL-SURFACE-EVALUATION.md`](../docs/TOOL-SURFACE-EVALUATION.md)'s recommendation against what the gateway's per-token RBAC enforces today; its all-or-nothing premise predates argument constraints
-- [ ] #58 No action can query a job: 24 actions return a job id that nothing accepts back, so every long-running job's outcome is unreachable
-- [~] `listActions` caps every parameter description, and in a single-dispatcher server that listing is the only channel for per-action params. Warren's decision: keep the cheap listing and add an opt-in `detail: true` mode returning the full text, with a `[+]` marker on what was cut. PR open, not merged; ships with the next release
+- [~] #58 No action could query a job: 24 actions return a job id that nothing accepted back, so every long-running job's outcome was unreachable. `job_get` / `job_list` added as one general tier-3 pair, with a field allowlist so a job's arguments and session credentials stay server-side. PR #62 open, not merged; ships with the next release
 - [ ] The two deferred follow-ups from the 2026-06-12 field report: the TrueNAS 26.0 compatibility sweep, and a job-method audit across every handler
 
 ## Done and dropped
 
+- [x] `listActions`'s parameter-description cap — Warren's decision was to keep the cheap listing and add an opt-in `detail: true` mode returning the full text, with a `[+]` marker on what was cut and the detail/execute combination refused rather than reinterpreted. Merged in #61 (`90aaad4`); not yet released
 - [x] Release v1.5.0 — tagged, CI published the image and the tarball, and the deployment pin was moved; verified by the running backend reporting its own version and build commit back, which is the check that settles it. ⚠ The pin itself is deliberately not recorded here, for the reason `CLAUDE.md` gives: a version named in a file drifts, and has twice
 - [x] `dataset_delete`'s `recursive` trap — description and behaviour fixed together in #59, released in v1.5.0 and live on the deployed backend
 - [x] [`PLAN-v1.0.0.md`](./PLAN-v1.0.0.md) — the pre-v1.0.0 hardening journey: REST → WebSocket migration, safety tiers, response filtering, validation

@@ -61,6 +61,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   intent set fails 3 and 1 respectively — so each intent field is
   independently necessary.
 
+- **`job_get` and `job_list` — a job id returned by an asynchronous action is
+  now queryable.** 24 actions start a middlewared `@job` and deliberately do
+  not await it, because awaiting a replication run, a cloud sync, a pool scrub,
+  a disk wipe or an update apply would block the call for minutes to hours. But
+  **no registered action accepted a job id back**, so all 24 of those ids were
+  receipts for work whose outcome was unreachable through this server: a caller
+  could start a scrub and then had no way to learn whether it finished, failed,
+  or was still running.
+
+  One general pair rather than a query per originating action. A job id is a
+  job id regardless of which action minted it, so per-action queries would mean
+  24 near-identical actions whose coverage came from a hand-maintained list —
+  and that list would go stale the first time a 25th action started a job, with
+  nothing reporting it. These two cover every job the middleware has, including
+  ones this server did not start.
+
+  - `job_get(job_id)` reports state, progress, result and error. **An unknown
+    id is reported as `found: false` with a `NOT FOUND` error, never as an
+    empty success** — so a mistyped or expired id cannot read as "the job
+    finished with no result". It also will not return a different job when
+    asked about one id.
+  - `job_list(method?, state?, limit?)` lists recent jobs newest first, with
+    both filters pushed to the server rather than applied to a fetched page.
+    Zero rows is labelled a successful query returning nothing, not a failure.
+  - Both are tier 3. Neither can start, abort or alter a job.
+
+- **A field allowlist keeps job records from leaking credentials.** Measured
+  against TrueNAS 27.0: a `core.get_jobs` record carries `arguments` — the
+  call arguments verbatim, which for a `user.create` job is the password —
+  `credentials`, the authenticating credential record of the session that
+  started the job, which is the same exposure class as the middleware audit
+  log storing API key values in plaintext, plus `exc_info` / `exception`
+  (tracebacks that can embed those arguments) and `logs_excerpt` /
+  `logs_path`. None is returned. `progress` is rebuilt field-by-field because
+  `progress.extra` is arbitrary job-set payload.
+
+  ⚠ It is an **allowlist, not a denylist**, so a field a later TrueNAS release
+  adds is excluded by default rather than passed through until someone
+  notices. None of the jobs present on the box when this was measured happened
+  to carry a credential, which is precisely why a denylist tuned to observed
+  values would have been a control calibrated against a reassuring sample.
+
+  Gated by `src/__tests__/job-query.test.ts`, whose fixtures are **real
+  records read from the box, pasted verbatim**. That is load-bearing for the
+  leak tests: a hand-written fixture carries only the fields its author
+  remembered, so "`arguments` is not returned" would pass against a fixture
+  that never had `arguments`. A fixture check asserts every excluded field is
+  actually present in the fixture first, and each exclusion is checked at
+  value level as well as key level, with the value asserted present in the
+  input.
+
 ## [1.5.0] — 2026-11-26
 
 ### Fixed
