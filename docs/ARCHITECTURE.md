@@ -228,11 +228,28 @@ curated list of "actions worth describing": it covers every registered
 action, with no per-action opt-in, because a hand-maintained list would
 decay exactly where it mattered and nothing would say so.
 
-`detail: true` is checked **before** the execute path, so a request
-carrying it can never dispatch a handler. A mistaken `detail: true` on
-an execute call returns a description instead of performing an action
-— the fail-safe direction on a server whose tier-1 actions destroy
-data.
+`detail: true` is checked **before** the execute path — and before the
+tier gates — so a request carrying it can never dispatch a handler.
+
+⚠ A call that asks for detail **and** carries execution intent
+(`params`, `confirm` or `reason`) is **refused**, not reinterpreted.
+An earlier revision returned the description, which is fail-safe in
+that nothing runs; but it presents a description as the outcome of the
+action, so a caller that meant to execute reads success and never
+learns the action did not run. Refusal is the only answer that cannot
+be misread, and because the check precedes the tier gates the error is
+about `detail` rather than about a missing confirmation.
+
+The discriminator is execution **intent**, not the presence of
+`action`: `detail: true` with a bare `action` is the documented way to
+describe one action and must keep working, while `params`, `confirm`
+and `reason` exist only to execute something. An empty `params: {}` is
+not intent — that is what a client sends when it has nothing to pass.
+
+The whole tool behaviour lives in an exported `dispatch()` that
+`createMcpServer` registers as the tool's only callback, so the gate
+is testable on the live path rather than through the SDK's private
+registered-tool map.
 
 ## Safety architecture
 

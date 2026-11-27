@@ -236,10 +236,17 @@ truenas(category: "storage", action: "dataset_delete", detail: true)
 
 Detail mode covers every registered action — it is not a curated set
 of actions deemed worth describing, because such a list would decay
-precisely where it mattered. It is also checked before the execute
-path, so `detail: true` can never dispatch a handler: a mistaken
-`detail: true` on an execute call returns text instead of destroying
-something.
+precisely where it mattered.
+
+⚠ **Asking for detail and execution in the same call is refused, not
+reinterpreted.** `detail: true` alongside `params`, `confirm` or
+`reason` returns an error naming both ways forward; nothing is
+dispatched. Returning the description instead would be safe in that
+nothing runs, but it reports a description as though it were the
+outcome of the action, so a caller that meant to execute reads success
+and never learns the action did not run. The check sits ahead of the
+execute path and ahead of the tier gates, so the refusal cannot be
+confused with a missing confirmation.
 
 ### Why WebSocket and not REST
 

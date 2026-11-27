@@ -6,6 +6,7 @@ import {
   TRUNCATION_MARKER,
 } from "../registry.js";
 import { buildRegistry } from "../tools/index.js";
+import { dispatch, type TrueNASToolArgs } from "../mcp-adapter.js";
 
 /**
  * Gate on detail mode: every registered action's full parameter descriptions
@@ -183,5 +184,168 @@ describe("detail mode is discovery, never execution", () => {
     const text = registry.describeActions("storage", "dataset_delete");
     expect(text).toContain("destructive");
     expect(text).toContain("confirm");
+  });
+});
+
+describe("detail combined with execution is REFUSED, and nothing runs", () => {
+  /**
+   * The gate is on `dispatch` — the function `createMcpServer` registers as
+   * the tool's only callback — so this exercises the live path rather than a
+   * reimplementation of it.
+   *
+   * ⚠ Every case here asserts TWO things: that the call was refused, and that
+   * the handler's call counter did not move. Asserting only the message would
+   * pass against a version that refused AFTER dispatching, which is the one
+   * outcome that actually matters.
+   */
+  function spyRegistry(): { registry: ToolRegistry; calls: () => number } {
+    let count = 0;
+    const registry = new ToolRegistry();
+    // Tier 3, so nothing but this gate can stop it — a confirm gate would
+    // keep the counter at zero by itself and the test would prove nothing.
+    registry.tool(
+      "pool_list",
+      "List pools",
+      { probe: z.string().optional().describe("A".repeat(DESCRIPTION_BUDGET + 30)) },
+      async () => {
+        count++;
+        return { content: [{ type: "text", text: "HANDLER RAN" }] };
+      },
+    );
+    return { registry, calls: () => count };
+  }
+
+  const EXECUTION_INTENT: Array<[string, TrueNASToolArgs]> = [
+    ["params", { params: { probe: "x" } }],
+    ["confirm", { confirm: true }],
+    ["reason", { reason: "because" }],
+    ["confirm + reason", { confirm: true, reason: "because" }],
+    ["params + confirm", { params: { probe: "x" }, confirm: true }],
+  ];
+
+  it.each(EXECUTION_INTENT)(
+    "refuses detail: true alongside %s, and the handler does not run",
+    async (_label, extra) => {
+      const { registry, calls } = spyRegistry();
+      const out = await dispatch(registry, {
+        category: "storage",
+        action: "pool_list",
+        detail: true,
+        ...extra,
+      });
+      const text = out.content.map((c) => c.text).join("\n");
+
+      expect(out.isError, "a refusal must be marked isError").toBe(true);
+      expect(text).toContain("REFUSED");
+      expect(text).toContain("detail cannot be combined with execution");
+      // It must not pass itself off as either outcome.
+      expect(text).not.toContain("HANDLER RAN");
+      expect(text, "a refusal must not read as a description").not.toContain("Detail mode —");
+      // The assertion that actually matters.
+      expect(calls(), "a handler ran despite the refusal").toBe(0);
+    },
+  );
+
+  it("POSITIVE CONTROL: the same handler DOES run without detail", async () => {
+    // Without this, every `calls() === 0` above could be explained by the
+    // handler being unreachable in this harness for some unrelated reason.
+    const { registry, calls } = spyRegistry();
+    const out = await dispatch(registry, {
+      category: "storage",
+      action: "pool_list",
+      params: { probe: "x" },
+    });
+    expect(out.content.map((c) => c.text).join("\n")).toContain("HANDLER RAN");
+    expect(calls(), "the handler is unreachable in this harness — the counter proves nothing").toBe(1);
+  });
+
+  it("POSITIVE CONTROL: the handler also runs with confirm and reason present", async () => {
+    const { registry, calls } = spyRegistry();
+    await dispatch(registry, {
+      category: "storage",
+      action: "pool_list",
+      confirm: true,
+      reason: "because",
+    });
+    expect(calls()).toBe(1);
+  });
+
+  it("still describes ONE action when detail carries no execution intent", async () => {
+    // The refusal must not swallow the per-action detail lookup, which is the
+    // documented way to read one action's full descriptions.
+    const { registry, calls } = spyRegistry();
+    const out = await dispatch(registry, {
+      category: "storage",
+      action: "pool_list",
+      detail: true,
+    });
+    const text = out.content.map((c) => c.text).join("\n");
+    expect(out.isError).toBeUndefined();
+    expect(text).toContain("Detail mode —");
+    expect(text).toContain("A".repeat(DESCRIPTION_BUDGET + 30));
+    expect(calls()).toBe(0);
+  });
+
+  it("an empty params object is not execution intent", async () => {
+    // `params: {}` is what a client sends when it has nothing to pass;
+    // treating it as intent would refuse a legitimate detail call.
+    const { registry, calls } = spyRegistry();
+    const out = await dispatch(registry, {
+      category: "storage",
+      action: "pool_list",
+      detail: true,
+      params: {},
+    });
+    expect(out.isError).toBeUndefined();
+    expect(out.content.map((c) => c.text).join("\n")).toContain("Detail mode —");
+    expect(calls()).toBe(0);
+  });
+
+  it("confirm: false is still execution intent — it is an answer to a gate", async () => {
+    const { registry, calls } = spyRegistry();
+    const out = await dispatch(registry, {
+      category: "storage",
+      action: "pool_list",
+      detail: true,
+      confirm: false,
+    });
+    expect(out.isError).toBe(true);
+    expect(out.content.map((c) => c.text).join("\n")).toContain("REFUSED");
+    expect(calls()).toBe(0);
+  });
+
+  it("the refusal names what to do next, in both directions", async () => {
+    const { registry } = spyRegistry();
+    const text = (
+      await dispatch(registry, {
+        category: "storage",
+        action: "pool_list",
+        detail: true,
+        confirm: true,
+      })
+    ).content
+      .map((c) => c.text)
+      .join("\n");
+    expect(text).toContain("call again WITHOUT detail");
+    expect(text).toContain("detail: true and no");
+    expect(text).toContain("confirm");
+  });
+
+  it("detail: true is refused even for a tier-1 action, before any tier gate", async () => {
+    // Order matters: the detail gate must sit ahead of the confirm gate, so
+    // the refusal is about detail rather than about a missing confirmation.
+    const registry = buildRegistry(stubClient);
+    const out = await dispatch(registry, {
+      category: "storage",
+      action: "dataset_delete",
+      detail: true,
+      confirm: true,
+      reason: "test",
+      params: { id: "pool/ds" },
+    });
+    const text = out.content.map((c) => c.text).join("\n");
+    expect(out.isError).toBe(true);
+    expect(text).toContain("REFUSED: detail cannot be combined with execution");
+    expect(text).not.toContain("DESTRUCTIVE OPERATION");
   });
 });

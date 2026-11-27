@@ -29,10 +29,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Detail mode covers **every** registered action with no per-action opt-in. A
     curated list of "actions worth describing" would decay precisely where it
     mattered, and nothing would report it.
-  - `detail: true` is checked before the execute path, so it can never dispatch
-    a handler. A mistaken `detail: true` on an execute call returns a
-    description instead of performing the action — the fail-safe direction on a
-    server whose tier-1 actions destroy data.
+  - `detail: true` is checked before the execute path — and before the tier
+    gates — so it can never dispatch a handler. Combining it with `params`,
+    `confirm` or `reason` is **refused** with an error naming both ways
+    forward, rather than reinterpreted as either one. Returning the
+    description would be safe in that nothing runs, but it presents a
+    description as the outcome of the action, so a caller that meant to
+    execute reads success and never learns the action did not run. An empty
+    `params: {}` is not execution intent.
+  - The tool's behaviour moved into an exported `dispatch()` that
+    `createMcpServer` registers as the tool's only callback. Pure refactor,
+    done so the gate above is testable on the live dispatch path instead of
+    through the SDK's private registered-tool map.
 
   Gated by `src/__tests__/detail-mode-untruncated.test.ts`, which asserts that
   detail output contains each parameter description **verbatim, read from Zod's
@@ -41,6 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-empty. Mutation-verified by line number: re-introducing the cut in detail
   mode fails 13 named cases, and removing the cap from the default listing
   fails the two gates that keep its cost promise honest.
+
+  The detail/execute refusal is gated separately, and every case asserts
+  **both** that the call was refused **and** that a handler call counter did
+  not move — asserting only the message would pass against a version that
+  refused *after* dispatching, which is the one outcome that matters. Two
+  positive controls show the same handler does run without `detail`, so a
+  zero counter cannot be explained by the handler being unreachable.
+  Mutation-verified by line number: never refusing fails 8 named cases,
+  removing the gate fails 10, and dropping `confirm` or `params` from the
+  intent set fails 3 and 1 respectively — so each intent field is
+  independently necessary.
 
 ## [1.5.0] — 2026-11-26
 
