@@ -95,8 +95,8 @@ without a coordination window.
 
 | Version | Supported |
 |---|---|
-| **1.5.x** | ✅ Active |
-| 1.1.x – 1.4.x | ❌ Superseded; fixes only if trivially backportable |
+| **1.6.x** | ✅ Active |
+| 1.1.x – 1.5.x | ❌ Superseded; fixes only if trivially backportable |
 | 1.0.0 | ❌ End of life |
 | 1.0.1 | ⚠ **Withdrawn** — never use; superseded by 1.1.1 |
 | < 1.0 | ❌ Pre-release; not supported |

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.6.0] — 2026-11-27
+
 ### Fixed
 
 - **`job_get` could return a ZFS dataset encryption key.** `result` is

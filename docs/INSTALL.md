@@ -65,7 +65,7 @@ docker run -i --rm \
   ghcr.io/staticrevolution-com/sr-truenas-mcp:latest
 ```
 
-Pin to a specific version with `:v1.5.0` — or better, to the image
+Pin to a specific version with `:v1.6.0` — or better, to the image
 digest — instead of `:latest`, for reproducible deploys. The tag list is
 on the [releases page](https://github.com/staticrevolution-com/sr-truenas-mcp/releases);
 this page does not track which is newest.

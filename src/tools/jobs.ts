@@ -118,6 +118,15 @@ export const JOB_FIELD_DENIED = [
  * field-name filter can traverse them. That is the rule in one line: **we
  * return what we can filter.**
  *
+ * ⚠ **"We return what we can filter" is a BOUND, not a guarantee.** The
+ * filter matches the field names it recognises, so a string nested inside
+ * an object under a name it does not recognise passes through untouched.
+ * That is the field-name filter's own coverage bound rather than anything
+ * this rule introduces — but `core.job_wait` can proxy any shape, so it is
+ * reachable from here, and nothing below closes it. Do not read "objects
+ * pass through" as "objects are safe". Recorded 2026-11-27 as a known
+ * residual, deliberately not fixed in the same change.
+ *
  * ⚠ Scope of the measurement: TrueNAS 27.0, 2026-11-27, via
  * `core.get_methods`. It enumerated the MIDDLEWARE's job methods, not this
  * server's 24 job-starting call sites — `job_get` queries by id against the
