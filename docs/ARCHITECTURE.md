@@ -25,7 +25,7 @@ for the full framing.
 flowchart TD
     LLM["LLM client<br/>(Claude Code, Claude Desktop, etc.)"]
     MCP["MCP transport<br/>(stdio JSON-RPC 2.0)"]
-    Tool["Single tool: <code>truenas</code><br/>3 modes, selected by which args are present"]
+    Tool["Single tool: <code>truenas</code><br/>4 modes, selected by which args are present"]
     Reg["ToolRegistry<br/>(src/registry.ts)"]
     Safety["Safety tier check<br/>(src/safety.ts)"]
     Schema["Zod schema validation"]
@@ -181,18 +181,21 @@ class disappeared entirely.
 
 ## The MCP tool surface
 
-Only one tool is registered: `truenas`. Its three modes are **not** a
+Only one tool is registered: `truenas`. Its four modes are **not** a
 `mode` parameter — there is no such field in the schema. The mode is
-implied by which of `category` and `action` the caller supplies:
+implied by which of `category`, `action` and `detail` the caller
+supplies:
 
 ```mermaid
 stateDiagram-v2
     [*] --> ListCategories: no args, or category = "help"
     [*] --> ListActions: category only
+    [*] --> Describe: detail = true + category (+ action)
     [*] --> Execute: category + action (+ params)
 
     ListCategories --> [*]: returns 17 category names + descriptions
     ListActions --> [*]: returns actions in category + tier markers
+    Describe --> [*]: returns the same actions, descriptions untruncated
     Execute --> Tier0: tier check
     Tier0 --> [*]: error — not registered
     Execute --> Tier1: tier check
@@ -207,6 +210,46 @@ The hierarchy means the model's prompt budget pays for one tool
 definition (the `truenas` tool, ~200 tokens) regardless of how many
 actions it ends up using in a session. Discovery is a runtime call,
 not a tools/list cost.
+
+### Why detail mode is a separate mode and not a wider budget
+
+`listActions` caps each parameter description at
+`DESCRIPTION_BUDGET` (100 characters) and marks what it cut with
+`[+]`. The cap is what keeps discovery cheap, and raising it would
+raise the cost of **every** listing to pay for the few descriptions
+that need the room, several of which carry safety caveats. (The gate
+in `detail-mode-untruncated.test.ts` asserts that population is
+non-empty — a count stated here would be a recorded fact with nothing
+re-deriving it.)
+
+So the budget stays and `detail: true` sits beside it as the uncapped
+channel, priced only when a caller asks. ⚠ Detail mode is **not** a
+curated list of "actions worth describing": it covers every registered
+action, with no per-action opt-in, because a hand-maintained list would
+decay exactly where it mattered and nothing would say so.
+
+`detail: true` is checked **before** the execute path — and before the
+tier gates — so a request carrying it can never dispatch a handler.
+
+⚠ A call that asks for detail **and** carries execution intent
+(`params`, `confirm` or `reason`) is **refused**, not reinterpreted.
+An earlier revision returned the description, which is fail-safe in
+that nothing runs; but it presents a description as the outcome of the
+action, so a caller that meant to execute reads success and never
+learns the action did not run. Refusal is the only answer that cannot
+be misread, and because the check precedes the tier gates the error is
+about `detail` rather than about a missing confirmation.
+
+The discriminator is execution **intent**, not the presence of
+`action`: `detail: true` with a bare `action` is the documented way to
+describe one action and must keep working, while `params`, `confirm`
+and `reason` exist only to execute something. An empty `params: {}` is
+not intent — that is what a client sends when it has nothing to pass.
+
+The whole tool behaviour lives in an exported `dispatch()` that
+`createMcpServer` registers as the tool's only callback, so the gate
+is testable on the live path rather than through the SDK's private
+registered-tool map.
 
 ## Safety architecture
 

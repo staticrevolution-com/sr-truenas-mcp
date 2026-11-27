@@ -79,10 +79,37 @@ export interface ParamInfo {
   name: string;
   required: boolean;
   description: string;
+  /**
+   * True when `description` was cut by the listing budget, so the summary
+   * listing can mark it and point the caller at detail mode. Always false
+   * when extracted with `{ truncate: false }`.
+   */
+  truncated: boolean;
 }
 
+/**
+ * Appended in place of the elided tail of a cut parameter description.
+ *
+ * Deliberately the same length as the `...` it replaced, so the summary
+ * listing's token cost is unchanged — the signal that more text exists is
+ * carried by this marker plus ONE header line per listing, never by a
+ * per-parameter sentence.
+ */
+export const TRUNCATION_MARKER = "[+]";
+
+/**
+ * Character budget for a parameter description in the SUMMARY listing.
+ *
+ * This limit is the reason detail mode exists: 15 descriptions registry-wide
+ * are longer than it, including live safety caveats, and the summary listing
+ * is the only channel a single-dispatcher server has for per-action
+ * parameters. The budget stays — it is what keeps discovery cheap — and
+ * `describeActions()` is the uncapped channel beside it.
+ */
+export const DESCRIPTION_BUDGET = 100;
+
 const CATEGORIES: Record<string, string> = {
-  system: "System info, configuration, services, mail, API keys, and NTP",
+  system: "System info, configuration, services, mail, API keys, NTP, and job lookup",
   storage: "Storage pools, datasets, snapshots, and periodic snapshot tasks",
   sharing: "File sharing — SMB/CIFS, NFS exports, and iSCSI (targets, extents, portals, initiators)",
   network: "Network interfaces, global config, static routes, IPMI, and staged change management",
@@ -159,10 +186,10 @@ export class ToolRegistry {
       return `No actions found in category "${category}".`;
     }
 
-    const lines: string[] = [
-      `Category: ${category} — ${catDesc}\n`,
-      `${actions.length} available actions:\n`,
-    ];
+    // Rendered first so the header can state whether anything was cut. One
+    // line per listing, only when it is true — never a per-parameter note.
+    const body: string[] = [];
+    let anyTruncated = false;
 
     for (const action of actions) {
       // Tier tag now makes the destructive marker explicit — mirrors the
@@ -171,25 +198,102 @@ export class ToolRegistry {
       const tierTag =
         action.tier === SafetyTier.ConfirmWithReason ? " [destructive: requires confirm + reason]" :
         action.tier === SafetyTier.Confirm ? " [destructive: requires confirm]" : "";
-      lines.push(`  ${action.name}${tierTag} — ${action.description}`);
+      body.push(`  ${action.name}${tierTag} — ${action.description}`);
       const params = extractParams(action.schema);
+      if (params.some((p) => p.truncated)) anyTruncated = true;
       if (params.length > 0) {
         const required = params.filter((p) => p.required);
         const optional = params.filter((p) => !p.required);
         if (required.length > 0) {
-          lines.push(
+          body.push(
             `    Required: ${required.map((p) => `${p.name}${p.description ? ` (${p.description})` : ""}`).join(", ")}`
           );
         }
         if (optional.length > 0) {
-          lines.push(
+          body.push(
             `    Optional: ${optional.map((p) => `${p.name}${p.description ? ` (${p.description})` : ""}`).join(", ")}`
           );
         }
       }
     }
 
+    const lines: string[] = [
+      `Category: ${category} — ${catDesc}\n`,
+      `${actions.length} available actions:\n`,
+    ];
+    if (anyTruncated) {
+      lines.push(
+        `A parameter description ending ${TRUNCATION_MARKER} is cut short here. For the full text, call again with detail: true (add action: "<name>" for one action).\n`,
+      );
+    }
+    lines.push(...body);
+
     return lines.join("\n");
+  }
+
+  /**
+   * Detail mode — the uncapped companion to `listActions()`.
+   *
+   * Returns every parameter description verbatim from the registered Zod
+   * schema, with no character budget. Opt-in precisely because it is not
+   * cheap: the summary listing stays the default so discovery cost is
+   * unchanged for callers that do not ask for this.
+   *
+   * With `action` omitted, covers the whole category — which is what makes
+   * this agnostic rather than a hand-maintained list of "actions worth
+   * describing". Every action is reachable; none is special-cased.
+   */
+  describeActions(category: string, action?: string): string {
+    const catDesc = CATEGORIES[category];
+    if (!catDesc) {
+      const available = Object.keys(CATEGORIES).join(", ");
+      return `Unknown category "${category}". Available categories: ${available}`;
+    }
+
+    const inCategory = [...this.tools.values()].filter((t) => t.category === category);
+    if (inCategory.length === 0) {
+      return `No actions found in category "${category}".`;
+    }
+
+    let actions = inCategory;
+    if (action) {
+      actions = inCategory.filter((t) => t.name === action);
+      if (actions.length === 0) {
+        const tool = this.tools.get(action);
+        if (tool) {
+          return `Action "${action}" belongs to category "${tool.category}", not "${category}". Use category "${tool.category}" instead.`;
+        }
+        const names = inCategory.map((t) => t.name).join(", ");
+        return `Unknown action "${action}" in category "${category}". Available: ${names}`;
+      }
+    }
+
+    const lines: string[] = [
+      `Category: ${category} — ${catDesc}`,
+      `Detail mode — full parameter descriptions, nothing truncated.`,
+      `${actions.length} action${actions.length === 1 ? "" : "s"}:\n`,
+    ];
+
+    for (const t of actions) {
+      const tierTag =
+        t.tier === SafetyTier.ConfirmWithReason ? " [destructive: requires confirm + reason]" :
+        t.tier === SafetyTier.Confirm ? " [destructive: requires confirm]" : "";
+      lines.push(`  ${t.name}${tierTag}`);
+      lines.push(`    ${t.description}`);
+      const params = extractParams(t.schema, { truncate: false });
+      if (params.length === 0) {
+        lines.push(`    (no parameters)`);
+      } else {
+        lines.push(`    Parameters:`);
+        for (const p of params) {
+          lines.push(`      ${p.name} (${p.required ? "required" : "optional"})`);
+          if (p.description) lines.push(`        ${p.description}`);
+        }
+      }
+      lines.push("");
+    }
+
+    return lines.join("\n").trimEnd();
   }
 
   /** Execute an action with safety tier enforcement and parameter validation */
@@ -433,7 +537,11 @@ function categorize(name: string): string {
   return "system";
 }
 
-function extractParams(schema: Record<string, unknown>): ParamInfo[] {
+function extractParams(
+  schema: Record<string, unknown>,
+  opts: { truncate?: boolean } = {},
+): ParamInfo[] {
+  const truncate = opts.truncate !== false;
   const params: ParamInfo[] = [];
   for (const [name, field] of Object.entries(schema)) {
     if (!field || typeof field !== "object") continue;
@@ -465,12 +573,16 @@ function extractParams(schema: Record<string, unknown>): ParamInfo[] {
       }
     }
 
-    // Truncate long descriptions for listing
-    if (description.length > 100) {
-      description = description.slice(0, 97) + "...";
+    // Truncate long descriptions for the summary listing. Detail mode passes
+    // `{ truncate: false }` and gets the source text verbatim.
+    let truncated = false;
+    if (truncate && description.length > DESCRIPTION_BUDGET) {
+      description =
+        description.slice(0, DESCRIPTION_BUDGET - TRUNCATION_MARKER.length) + TRUNCATION_MARKER;
+      truncated = true;
     }
 
-    params.push({ name, required, description });
+    params.push({ name, required, description, truncated });
   }
   return params;
 }

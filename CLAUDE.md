@@ -52,7 +52,7 @@ GitHub releases include pre-built `sr-truenas-mcp-linux-x64.tar.gz` with SHA256 
 
 ## Architecture
 
-Single MCP tool (`truenas`) with hierarchical discovery: 278 active actions across 17 categories, exposed through 3 modes (list categories, list actions, execute).
+Single MCP tool (`truenas`) with hierarchical discovery: 278 active actions across 17 categories, exposed through 4 modes (list categories, list actions, describe actions in full via `detail: true`, execute).
 
 **Transport**: WebSocket JSON-RPC 2.0 (DDP protocol) at `wss://{host}/websocket`.
 
@@ -68,7 +68,7 @@ Single MCP tool (`truenas`) with hierarchical discovery: 278 active actions acro
 
 | File | Purpose |
 |------|---------|
-| `src/index.ts` | MCP server setup, single `truenas` tool with 3 modes |
+| `src/index.ts` | MCP server setup, single `truenas` tool with 4 modes |
 | `src/registry.ts` | Tool registry, categorization, centralized safety enforcement |
 | `src/client.ts` | WebSocket JSON-RPC 2.0 client (DDP handshake, multiplexing, reconnect) |
 | `src/safety.ts` | Tier classification map (pure data, every action -> tier) |
@@ -199,6 +199,7 @@ Update: publish a new tagged release (CI builds the binary tarball + GHCR image)
 
 ## Known Limitations
 
+- **`listActions` caps every parameter description at 100 characters.** A description cut by the cap ends `[+]`, and the listing says once that `detail: true` returns the full text. Parameter descriptions registry-wide are over the cap, several of them safety caveats — the gate in `src/__tests__/detail-mode-untruncated.test.ts` asserts the population is non-empty rather than pinning a count no one would re-derive — so **do not act on a `[+]` description without re-reading it in detail mode**. The cap is deliberate (it is what keeps discovery cheap) and `detail: true` is the uncapped channel beside it, covering every action with no per-action opt-in. ⚠ Action descriptions are **not** capped; that is why the `dataset_delete` warning below lives in the action description rather than in `recursive`'s. ⚠ `detail: true` combined with `params`, `confirm` or `reason` is **refused** — it never dispatches, and it never returns a description as though the action had run. The check precedes the tier gates, so its error is about `detail`, not about a missing confirmation.
 - **A job id returned by an asynchronous action is queryable with `job_get`.** 24 actions start a middlewared `@job` and deliberately do not await it (`describeAsyncJob` in `src/job-utils.ts`), because awaiting a replication run or a scrub would block the call for minutes to hours. Until `job_get` / `job_list` existed, **no registered action accepted a job id back**, so those 24 ids were receipts for work whose outcome was unreachable. ⚠ `pool.dataset.delete` is `"job": false`, so polling for it waits on a record that never exists — a job id is not evidence that a method is a job.
 - **`job_get` / `job_list` return job metadata only, by allowlist.** Measured on 27.0: a `core.get_jobs` record carries `arguments` (the call arguments verbatim — a `user.create` job's password), `credentials` (the authenticating credential record for the session that started it, the same exposure class as the plaintext-API-key audit log), `exc_info` / `exception` (tracebacks that can embed those arguments), and `logs_excerpt` / `logs_path`. None of these is returned. ⚠ It is an **allowlist**, so a field a later TrueNAS release adds is excluded by default — do not convert it to a denylist, and do not widen it on the strength of a sample of jobs that happened to carry nothing sensitive.
 - **SMART test initiation is not available via the WebSocket API**, and `disk_smart_test_run` is nonetheless registered: it starts nothing and returns an explanation naming the web UI. Its description says so, so discovery does not promise a test run. Results are available through `disk_smart_test_list` and `disk.query`.
