@@ -65,6 +65,11 @@ export const JOB_FIELD_ALLOWLIST = [
   "transient",
 ] as const;
 
+/**
+ * ⚠ `result` IS allowlisted, and that is only safe because of
+ * `projectJobResult` below. Read that before touching this list.
+ */
+
 /** Fields measured present on a job record and deliberately NOT returned. */
 export const JOB_FIELD_DENIED = [
   "arguments",
@@ -78,16 +83,93 @@ export const JOB_FIELD_DENIED = [
 ] as const;
 
 /**
+ * Withhold a job result that no field-name filter could ever redact.
+ *
+ * 🔑 **The mechanism, which is the whole reason this exists.** This server's
+ * response filter (`filterSensitiveFields`) matches on field NAMES. A bare
+ * string has no field name, so the filter is *structurally* incapable of
+ * redacting one — not by oversight, but because there is nothing to match.
+ * Measured both directions:
+ *
+ *   - `certificate.create` returns an object whose key material sits under
+ *     `privatekey`, and the filter redacts it correctly.
+ *   - `pool.dataset.export_key` returns **the dataset encryption key as a
+ *     bare hex string**, and it passed through the allowlist and the filter
+ *     completely intact.
+ *
+ * So a scalar result is withheld here, before the filter ever sees it, and
+ * replaced by a descriptor that says what was there.
+ *
+ * ⚠ **It is a SHAPE rule, deliberately, and not a list of dangerous
+ * methods.** Two measurements say a method list cannot work:
+ *
+ *   1. Of the 105 `@job` methods on TrueNAS 27.0 (of 837 total), exactly
+ *      three return a bare string — `pool.dataset.export_key` (the key),
+ *      `audit.export` (a path) and `docker.backup` (a name). A list of those
+ *      three would be correct today and silently wrong the first time
+ *      TrueNAS adds a fourth.
+ *   2. `core.job_wait`'s own return schema is **untyped** — "The result data
+ *      returned by the completed job". It proxies another job's result, so
+ *      its payload is whatever that job returned. No amount of enumerating
+ *      method names can tell you what one of its records carries; only
+ *      looking at the value can.
+ *
+ * Objects and arrays of objects pass through unchanged, because the
+ * field-name filter can traverse them. That is the rule in one line: **we
+ * return what we can filter.**
+ *
+ * ⚠ Scope of the measurement: TrueNAS 27.0, 2026-11-27, via
+ * `core.get_methods`. It enumerated the MIDDLEWARE's job methods, not this
+ * server's 24 job-starting call sites — `job_get` queries by id against the
+ * whole box and reaches jobs started from the UI or the API, and
+ * `pool.dataset.export_key` is not one of our registered actions. Scoping
+ * the question to our own call sites would have returned a reassuring
+ * answer.
+ */
+export function projectJobResult(result: unknown): unknown {
+  const describe = (value: string) => ({
+    withheld: "scalar result not returned",
+    reason:
+      "A result with no field name cannot be redacted by a field-name filter, and some job results are credential material (pool.dataset.export_key returns a dataset encryption key as a bare hex string). Read the value through the action that produced it, which knows what it is.",
+    type: "string",
+    length: value.length,
+  });
+
+  if (typeof result === "string") return describe(result);
+
+  // An array of bare strings has the same problem for the same reason. No
+  // @job method returns one today — every array-returning method returns
+  // objects — but `core.job_wait` can proxy any shape at all, so this is
+  // checked rather than assumed.
+  if (Array.isArray(result) && result.some((item) => typeof item === "string")) {
+    return {
+      withheld: "scalar results within an array not returned",
+      reason:
+        "At least one element is a string with no field name, which a field-name filter cannot redact.",
+      type: "array",
+      length: result.length,
+    };
+  }
+
+  return result;
+}
+
+/**
  * Project a raw middleware job record onto the allowlist.
  *
  * `progress` is rebuilt field-by-field rather than passed through, because
- * `progress.extra` is arbitrary payload set by the job itself.
+ * `progress.extra` is arbitrary payload set by the job itself, and `result`
+ * goes through `projectJobResult` for the reason documented above.
  */
 export function projectJob(raw: unknown): Record<string, unknown> {
   const job = (raw ?? {}) as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const field of JOB_FIELD_ALLOWLIST) {
     if (!(field in job)) continue;
+    if (field === "result") {
+      out.result = projectJobResult(job.result);
+      continue;
+    }
     if (field === "progress") {
       const p = (job.progress ?? {}) as Record<string, unknown>;
       out.progress = {
@@ -110,6 +192,7 @@ export function register(server: McpServer, client: TrueNASClient): void {
       "Look up one middlewared job by the id a long-running action returned.",
       "This is how the outcome of an asynchronous action is reached: actions that start replication runs, cloud syncs, pool scrubs, disk wipes or update applies return a job id and do NOT wait for it, so the id is the only handle on whether the work succeeded.",
       "Reports state (WAITING/RUNNING/SUCCESS/FAILED/ABORTED), progress, the result on success and the error on failure.",
+      "A result that is a bare string is WITHHELD and replaced by a descriptor: a value with no field name cannot be redacted by a field-name filter, and some job results are credential material — pool.dataset.export_key returns a dataset encryption key as hex. Structured results pass through filtered as usual. To read a withheld value, use the action that produced it.",
       "An unknown id is reported as NOT FOUND, never as an empty success — so a mistyped id cannot read as 'the job finished with no result'. Note that middlewared expires old job records, so NOT FOUND means 'not retrievable now', not 'never existed'.",
       "Returns job metadata only. The job's own call arguments and the credentials of the session that started it are deliberately not returned; see JOB_FIELD_DENIED in src/tools/jobs.ts for why.",
     ].join(" "),
